@@ -18,13 +18,13 @@ use core::{ffi::CStr, fmt};
 pub use apple_errnos::Errno;
 pub type Dev = u32;
 
-#[derive(Debug, Clone, Copy, Hash)]
+#[derive(Debug, Clone)]
 pub struct ProcessInfo {
     pub pid: u32,
     pub uid: u32,
     pub gid: u32,
     pub session: u32,
-    pub tty_nr: Option<Dev>,
+    pub tty: Option<TtyInfo>,
 }
 
 impl ProcessInfo {
@@ -49,10 +49,10 @@ impl ProcessInfo {
         let uid = ki_proc.kp_eproc.e_pcred.p_ruid;
         let gid = ki_proc.kp_eproc.e_pcred.p_rgid;
 
-        let tty_nr = if ki_proc.kp_eproc.e_tdev == -1 {
+        let tty = if ki_proc.kp_eproc.e_tdev == -1 {
             None
         } else {
-            Some(ki_proc.kp_eproc.e_tdev as Dev)
+            Some(TtyInfo::by_number(ki_proc.kp_eproc.e_tdev as Dev)?)
         };
 
         Ok(Self {
@@ -60,17 +60,23 @@ impl ProcessInfo {
             uid,
             gid,
             session,
-            tty_nr,
+            tty,
         })
     }
 }
 
 #[derive(Clone)]
 pub struct TtyInfo {
+    nr: Dev,
     buf: *mut u8,
 }
 
 impl TtyInfo {
+    #[inline]
+    pub const fn number(&self) -> Dev {
+        self.nr
+    }
+
     #[inline]
     pub fn path(&self) -> &CStr {
         unsafe { CStr::from_ptr(self.buf.cast()) }
@@ -80,9 +86,32 @@ impl TtyInfo {
     pub fn name(&self) -> &CStr {
         unsafe { CStr::from_ptr(self.buf.add(5).cast()) }
     }
+
+    pub fn by_number(rdev: Dev) -> Result<TtyInfo, Errno> {
+        unsafe {
+            let name = bsd::devname(rdev as _, libc::S_IFCHR);
+            if name.is_null() {
+                return Err(Errno::ENOENT);
+            }
+
+            let name = CStr::from_ptr(name).to_bytes();
+
+            let buf = libc::malloc(5 + name.len() + 1) as *mut u8;
+            if buf.is_null() {
+                return Err(Errno::ENOMEM);
+            }
+            core::ptr::copy_nonoverlapping(b"/dev/".as_ptr().cast(), buf, 5);
+            let ptr = buf.add(5);
+            core::ptr::copy_nonoverlapping(name.as_ptr(), ptr, name.len());
+            *ptr.add(name.len()) = 0;
+
+            Ok(TtyInfo { nr: rdev, buf })
+        }
+    }
 }
 
 impl Drop for TtyInfo {
+    #[inline]
     fn drop(&mut self) {
         unsafe { libc::free(self.buf.cast()) };
     }
@@ -94,38 +123,5 @@ impl fmt::Debug for TtyInfo {
             .field("path", &self.path())
             .field("name", &self.name())
             .finish()
-    }
-}
-
-pub fn find_by_number(rdev: Dev) -> Result<TtyInfo, Errno> {
-    unsafe {
-        let name = bsd::devname(rdev as _, libc::S_IFCHR);
-        if name.is_null() {
-            return Err(Errno::ENOENT);
-        }
-
-        let name = CStr::from_ptr(name).to_bytes();
-
-        let buf = libc::malloc(5 + name.len() + 1) as *mut u8;
-        if buf.is_null() {
-            return Err(Errno::ENOMEM);
-        }
-        core::ptr::copy_nonoverlapping(b"/dev/".as_ptr().cast(), buf, 5);
-        let ptr = buf.add(5);
-        core::ptr::copy_nonoverlapping(name.as_ptr(), ptr, name.len());
-        *ptr.add(name.len()) = 0;
-
-        Ok(TtyInfo { buf })
-    }
-}
-
-#[inline]
-pub fn get_tty() -> Result<Option<TtyInfo>, Errno> {
-    let info = ProcessInfo::current()?;
-
-    if let Some(ttynr) = info.tty_nr {
-        find_by_number(ttynr).map(Some)
-    } else {
-        Ok(None)
     }
 }

@@ -1,12 +1,5 @@
 use crate::Errno;
 
-#[macro_export]
-macro_rules! prefix {
-    ($p:literal) => {
-        concat!("/usr/local", $p)
-    };
-}
-
 use core::{
     borrow::{Borrow, BorrowMut},
     mem,
