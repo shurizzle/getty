@@ -1,15 +1,19 @@
 use core::mem::MaybeUninit;
 
-use atoi::FromRadix10;
+use atoi::FromRadix10Signed;
 use linux_stat::{CStr, Dev, RawFd};
 use linux_syscalls::{syscall, Errno, Sysno};
+
+use crate::{DirentBuf, TtyInfo};
+
+use super::{DirBuf, PathBuf};
 
 const SELF_INFO_PATH: &[u8] = b"/proc/self/stat\0".as_slice();
 const O_CLOEXEC: usize = 0o2000000;
 const O_RDONLY: usize = 0;
 
-unsafe fn parse_num<T: FromRadix10>(buf: &[u8]) -> Result<(T, &[u8]), Errno> {
-    let (res, len) = T::from_radix_10(buf);
+unsafe fn parse_num<T: FromRadix10Signed>(buf: &[u8]) -> Result<(T, &[u8]), Errno> {
+    let (res, len) = T::from_radix_10_signed(buf);
     if len == 0 {
         return Err(Errno::EINVAL);
     }
@@ -31,14 +35,13 @@ unsafe fn skip_space(buf: &[u8]) -> Result<&[u8], Errno> {
 }
 
 #[derive(Debug, Clone, Copy, Hash)]
-pub struct ProcessInfo {
-    pub pid: core::ffi::c_int,
-    pub ppid: core::ffi::c_int,
-    pub session: core::ffi::c_int,
+pub struct RawProcessInfo {
+    pub pid: u32,
+    pub session: u32,
     pub tty_nr: Option<Dev>,
 }
 
-impl ProcessInfo {
+impl RawProcessInfo {
     fn parse(path: &CStr) -> Result<Self, Errno> {
         unsafe {
             struct FdHolder(RawFd);
@@ -83,7 +86,7 @@ impl ProcessInfo {
                 Some(_) | None => return Err(Errno::EINVAL),
             };
 
-            let (ppid, buf) = parse_num(buf)?;
+            let (_, buf) = parse_num::<core::ffi::c_int>(buf)?;
             let buf = skip_space(buf)?;
             let buf = match memchr::memchr(b' ', buf) {
                 Some(0) | None => return Err(Errno::EINVAL),
@@ -91,16 +94,15 @@ impl ProcessInfo {
             };
             let (session, buf) = parse_num(buf)?;
             let buf = skip_space(buf)?;
-            let tty_nr = parse_num::<u32>(buf)?.0;
-            let tty_nr = if tty_nr == core::mem::transmute::<i32, u32>(-1i32) {
+            let tty_nr = parse_num::<i32>(buf)?.0;
+            let tty_nr = if tty_nr == -1 {
                 None
             } else {
-                Some(tty_nr.into())
+                Some(core::mem::transmute::<i32, u32>(tty_nr).into())
             };
 
             Ok(Self {
                 pid,
-                ppid,
                 session,
                 tty_nr,
             })
@@ -112,12 +114,8 @@ impl ProcessInfo {
         Self::parse(unsafe { CStr::from_ptr(SELF_INFO_PATH.as_ptr().cast()) })
     }
 
-    pub fn for_process(pid: core::ffi::c_int) -> Result<Self, Errno> {
+    pub fn for_process(pid: u32) -> Result<Self, Errno> {
         use itoap::Integer;
-
-        if pid < 0 {
-            return Err(Errno::EINVAL);
-        }
 
         let mut uninit_buf = MaybeUninit::<[u8; 11 + core::ffi::c_int::MAX_LEN + 1]>::uninit();
         let path = unsafe {
@@ -132,5 +130,106 @@ impl ProcessInfo {
         };
 
         Self::parse(path)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ProcessInfo<B: DirentBuf> {
+    pub pid: u32,
+    pub session: u32,
+    pub tty: Option<TtyInfo<B>>,
+}
+
+impl<B: DirentBuf> ProcessInfo<B> {
+    pub fn current_with_buffers_in<'a, I, B1>(dirs: I, buf: &mut B1, path: B) -> Result<Self, Errno>
+    where
+        I: IntoIterator<Item = &'a CStr>,
+        B1: DirentBuf,
+    {
+        let raw = RawProcessInfo::current()?;
+
+        Ok(Self {
+            pid: raw.pid,
+            session: raw.session,
+            tty: if let Some(tty_nr) = raw.tty_nr {
+                Some(TtyInfo::by_number_with_buffers_in(tty_nr, dirs, buf, path)?)
+            } else {
+                None
+            },
+        })
+    }
+
+    pub fn for_process_with_buffers_in<'a, I, B1>(
+        pid: u32,
+        dirs: I,
+        buf: &mut B1,
+        path: B,
+    ) -> Result<Self, Errno>
+    where
+        I: IntoIterator<Item = &'a CStr>,
+        B1: DirentBuf,
+    {
+        let raw = RawProcessInfo::for_process(pid)?;
+
+        Ok(Self {
+            pid: raw.pid,
+            session: raw.session,
+            tty: if let Some(tty_nr) = raw.tty_nr {
+                Some(TtyInfo::by_number_with_buffers_in(tty_nr, dirs, buf, path)?)
+            } else {
+                None
+            },
+        })
+    }
+
+    pub fn current_with_buffers<B1>(buf: &mut B1, path: B) -> Result<Self, Errno>
+    where
+        B1: DirentBuf,
+    {
+        Self::current_with_buffers_in(
+            [unsafe { CStr::from_bytes_with_nul_unchecked(b"/dev\0") }],
+            buf,
+            path,
+        )
+    }
+
+    pub fn for_process_with_buffers<B1>(pid: u32, buf: &mut B1, path: B) -> Result<Self, Errno>
+    where
+        B1: DirentBuf,
+    {
+        Self::for_process_with_buffers_in(
+            pid,
+            [unsafe { CStr::from_bytes_with_nul_unchecked(b"/dev\0") }],
+            buf,
+            path,
+        )
+    }
+}
+
+impl ProcessInfo<PathBuf> {
+    #[inline]
+    pub fn current_in<'a, I>(dirs: I) -> Result<Self, Errno>
+    where
+        I: IntoIterator<Item = &'a CStr>,
+    {
+        Self::current_with_buffers_in(dirs, &mut DirBuf::new(), PathBuf::new())
+    }
+
+    #[inline]
+    pub fn for_process_in<'a, I>(pid: u32, dirs: I) -> Result<Self, Errno>
+    where
+        I: IntoIterator<Item = &'a CStr>,
+    {
+        Self::for_process_with_buffers_in(pid, dirs, &mut DirBuf::new(), PathBuf::new())
+    }
+
+    #[inline]
+    pub fn current() -> Result<Self, Errno> {
+        Self::current_with_buffers(&mut DirBuf::new(), PathBuf::new())
+    }
+
+    #[inline]
+    pub fn for_process(pid: u32) -> Result<Self, Errno> {
+        Self::for_process_with_buffers(pid, &mut DirBuf::new(), PathBuf::new())
     }
 }

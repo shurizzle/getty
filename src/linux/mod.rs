@@ -23,11 +23,17 @@ const MAX_U32_LENGTH: usize = 10;
 
 #[derive(Clone)]
 pub struct TtyInfo<B: DirentBuf> {
+    nr: Dev,
     buf: B,
     offset: usize,
 }
 
 impl<B: DirentBuf> TtyInfo<B> {
+    #[inline]
+    pub fn number(&self) -> Dev {
+        self.nr
+    }
+
     #[inline]
     pub fn path(&self) -> &CStr {
         unsafe { CStr::from_ptr(self.buf.as_ptr().cast()) }
@@ -42,6 +48,7 @@ impl<B: DirentBuf> TtyInfo<B> {
 impl<B: DirentBuf> fmt::Debug for TtyInfo<B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("TtyInfo")
+            .field("number", &self.number())
             .field("path", &self.path())
             .field("name", &self.name())
             .finish()
@@ -155,15 +162,19 @@ fn scandir<B1: DirentBuf, B2: DirentBuf>(
     Ok(None)
 }
 
-#[cfg(fetures = "std")]
-type DirBuf = VecBuf;
-#[cfg(not(fetures = "std"))]
-type DirBuf = ArrayBuf<2048>;
+#[cfg(feature = "std")]
+type DirBuf = VecBuffer;
+#[cfg(all(feature = "c", not(feature = "std")))]
+type DirBuf = CBuffer;
+#[cfg(all(not(feature = "c"), not(feature = "std")))]
+type DirBuf = ArrayBuffer<2048>;
 
-#[cfg(fetures = "std")]
-type PathBuf = VecBuf;
-#[cfg(not(fetures = "std"))]
-type PathBuf = ArrayBuf<4096>;
+#[cfg(feature = "std")]
+type PathBuf = VecBuffer;
+#[cfg(all(feature = "c", not(feature = "std")))]
+type PathBuf = CBuffer;
+#[cfg(all(not(feature = "c"), not(feature = "std")))]
+type PathBuf = ArrayBuffer<4096>;
 
 fn find_in_dir<B1: DirentBuf, B2: DirentBuf>(
     dir: &CStr,
@@ -200,111 +211,80 @@ fn concat_cstr_number<const N: usize>(
     }
 }
 
-pub fn find_by_number_with_buffers_in<'a, I, B1, B2>(
-    rdev: Dev,
-    dirs: I,
-    buf: &mut B1,
-    mut path: B2,
-) -> Result<TtyInfo<B2>, Errno>
-where
-    I: IntoIterator<Item = &'a CStr>,
-    B1: DirentBuf,
-    B2: DirentBuf,
-{
-    let mut guess_buf = MaybeUninit::<[u8; 6 + MAX_U32_LENGTH + 1]>::uninit();
-    match rdev.major() {
-        TTY_MAJOR => {
-            let min = rdev.minor();
-            if min < NR_CONSOLES {
-                concat_cstr_number(&mut guess_buf, b"tty", min);
-            } else {
-                concat_cstr_number(&mut guess_buf, b"ttyS", min - NR_CONSOLES);
+impl<B: DirentBuf> TtyInfo<B> {
+    pub fn by_number_with_buffers_in<'a, I, B1>(
+        rdev: Dev,
+        dirs: I,
+        buf: &mut B1,
+        mut path: B,
+    ) -> Result<Self, Errno>
+    where
+        I: IntoIterator<Item = &'a CStr>,
+        B1: DirentBuf,
+    {
+        let mut guess_buf = MaybeUninit::<[u8; 6 + MAX_U32_LENGTH + 1]>::uninit();
+        match rdev.major() {
+            TTY_MAJOR => {
+                let min = rdev.minor();
+                if min < NR_CONSOLES {
+                    concat_cstr_number(&mut guess_buf, b"tty", min);
+                } else {
+                    concat_cstr_number(&mut guess_buf, b"ttyS", min - NR_CONSOLES);
+                }
+            }
+            PTS_MAJOR => {
+                concat_cstr_number(&mut guess_buf, b"pts/", rdev.minor());
+            }
+            TTY_ACM_MAJOR => {
+                concat_cstr_number(&mut guess_buf, b"ttyACM", rdev.minor());
+            }
+            TTY_USB_MAJOR => {
+                concat_cstr_number(&mut guess_buf, b"ttyUSB", rdev.minor());
+            }
+            _ => return Err(Errno::ENOTTY),
+        }
+        let guess_buf = unsafe { guess_buf.assume_init() };
+        let guessing = unsafe { CStr::from_ptr(guess_buf.as_slice().as_ptr().cast()) };
+
+        for dir in dirs {
+            if Some(()) == find_in_dir(dir, guessing, rdev, buf, &mut path)? {
+                path.shrink_to_fit();
+                return Ok(TtyInfo {
+                    nr: rdev,
+                    buf: path,
+                    offset: dir.to_bytes().len() + 1,
+                });
             }
         }
-        PTS_MAJOR => {
-            concat_cstr_number(&mut guess_buf, b"pts/", rdev.minor());
-        }
-        TTY_ACM_MAJOR => {
-            concat_cstr_number(&mut guess_buf, b"ttyACM", rdev.minor());
-        }
-        TTY_USB_MAJOR => {
-            concat_cstr_number(&mut guess_buf, b"ttyUSB", rdev.minor());
-        }
-        _ => return Err(Errno::ENOTTY),
-    }
-    let guess_buf = unsafe { guess_buf.assume_init() };
-    let guessing = unsafe { CStr::from_ptr(guess_buf.as_slice().as_ptr().cast()) };
 
-    for dir in dirs {
-        if Some(()) == find_in_dir(dir, guessing, rdev, buf, &mut path)? {
-            path.shrink_to_fit();
-            return Ok(TtyInfo {
-                buf: path,
-                offset: dir.to_bytes().len() + 1,
-            });
-        }
+        Err(Errno::ENOENT)
     }
 
-    Err(Errno::ENOENT)
-}
-
-pub fn find_by_number_in<'a, I>(rdev: Dev, dirs: I) -> Result<TtyInfo<PathBuf>, Errno>
-where
-    I: IntoIterator<Item = &'a CStr>,
-{
-    find_by_number_with_buffers_in(rdev, dirs, &mut DirBuf::new(), PathBuf::new())
-}
-
-pub fn find_by_number_with_buffers<B1: DirentBuf, B2: DirentBuf>(
-    rdev: Dev,
-    buf: &mut B1,
-    path: B2,
-) -> Result<TtyInfo<B2>, Errno> {
-    find_by_number_with_buffers_in(
-        rdev,
-        [unsafe { CStr::from_bytes_with_nul_unchecked(b"/dev\0") }],
-        buf,
-        path,
-    )
-}
-
-pub fn find_by_number(rdev: Dev) -> Result<TtyInfo<PathBuf>, Errno> {
-    find_by_number_with_buffers(rdev, &mut DirBuf::new(), PathBuf::new())
-}
-
-pub fn get_tty_with_buffers_in<'a, B1, B2, I>(
-    buf: &mut B1,
-    path: B2,
-    dirs: I,
-) -> Result<Option<TtyInfo<B2>>, Errno>
-where
-    B1: DirentBuf,
-    B2: DirentBuf,
-    I: IntoIterator<Item = &'a CStr>,
-{
-    let info = ProcessInfo::current()?;
-
-    if let Some(ttynr) = info.tty_nr {
-        find_by_number_with_buffers_in(ttynr, dirs, buf, path).map(Some)
-    } else {
-        Ok(None)
+    pub fn by_number_with_buffers<B1: DirentBuf>(
+        rdev: Dev,
+        buf: &mut B1,
+        path: B,
+    ) -> Result<Self, Errno> {
+        Self::by_number_with_buffers_in(
+            rdev,
+            [unsafe { CStr::from_bytes_with_nul_unchecked(b"/dev\0") }],
+            buf,
+            path,
+        )
     }
 }
 
-pub fn get_tty_with_buffers<B1: DirentBuf, B2: DirentBuf>(
-    buf: &mut B1,
-    path: B2,
-) -> Result<Option<TtyInfo<B2>>, Errno> {
-    let info = ProcessInfo::current()?;
-
-    if let Some(ttynr) = info.tty_nr {
-        find_by_number_with_buffers(ttynr, buf, path).map(Some)
-    } else {
-        Ok(None)
+impl TtyInfo<PathBuf> {
+    #[inline]
+    pub fn by_number_in<'a, I>(rdev: Dev, dirs: I) -> Result<Self, Errno>
+    where
+        I: IntoIterator<Item = &'a CStr>,
+    {
+        Self::by_number_with_buffers_in(rdev, dirs, &mut DirBuf::new(), PathBuf::new())
     }
-}
 
-#[inline]
-pub fn get_tty() -> Result<Option<TtyInfo<PathBuf>>, Errno> {
-    get_tty_with_buffers(&mut DirBuf::new(), PathBuf::new())
+    #[inline]
+    pub fn by_number(rdev: Dev) -> Result<Self, Errno> {
+        Self::by_number_with_buffers(rdev, &mut DirBuf::new(), PathBuf::new())
+    }
 }

@@ -243,17 +243,24 @@ impl dirent {
     }
 }
 
-pub struct ArrayBuf<const N: usize> {
+pub struct ArrayBuffer<const N: usize> {
     mem: MaybeUninit<[u8; N]>,
     len: usize,
 }
 
 #[cfg(feature = "std")]
-pub struct VecBuf {
+pub struct VecBuffer {
     mem: Vec<u8>,
 }
 
-impl<const N: usize> ArrayBuf<N> {
+#[cfg(feature = "c")]
+pub struct CBuffer {
+    mem: *mut u8,
+    len: usize,
+    capacity: usize,
+}
+
+impl<const N: usize> ArrayBuffer<N> {
     #[inline]
     pub const fn new() -> Self {
         Self {
@@ -263,7 +270,7 @@ impl<const N: usize> ArrayBuf<N> {
     }
 }
 
-impl<const N: usize> DirentBuf for ArrayBuf<N> {
+impl<const N: usize> DirentBuf for ArrayBuffer<N> {
     #[inline]
     fn reset(&mut self) {
         self.len = 0;
@@ -307,7 +314,7 @@ impl<const N: usize> DirentBuf for ArrayBuf<N> {
     fn shrink_to_fit(&mut self) {}
 }
 
-impl<const N: usize> Deref for ArrayBuf<N> {
+impl<const N: usize> Deref for ArrayBuffer<N> {
     type Target = [u8];
 
     #[inline]
@@ -316,35 +323,35 @@ impl<const N: usize> Deref for ArrayBuf<N> {
     }
 }
 
-impl<const N: usize> DerefMut for ArrayBuf<N> {
+impl<const N: usize> DerefMut for ArrayBuffer<N> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.as_mut_slice()
     }
 }
 
-impl<const N: usize> AsRef<[u8]> for ArrayBuf<N> {
+impl<const N: usize> AsRef<[u8]> for ArrayBuffer<N> {
     #[inline]
     fn as_ref(&self) -> &[u8] {
         self.as_slice()
     }
 }
 
-impl<const N: usize> AsMut<[u8]> for ArrayBuf<N> {
+impl<const N: usize> AsMut<[u8]> for ArrayBuffer<N> {
     #[inline]
     fn as_mut(&mut self) -> &mut [u8] {
         self.as_mut_slice()
     }
 }
 
-impl<const N: usize> Borrow<[u8]> for ArrayBuf<N> {
+impl<const N: usize> Borrow<[u8]> for ArrayBuffer<N> {
     #[inline]
     fn borrow(&self) -> &[u8] {
         self.as_slice()
     }
 }
 
-impl<const N: usize> BorrowMut<[u8]> for ArrayBuf<N> {
+impl<const N: usize> BorrowMut<[u8]> for ArrayBuffer<N> {
     #[inline]
     fn borrow_mut(&mut self) -> &mut [u8] {
         self.as_mut_slice()
@@ -352,7 +359,7 @@ impl<const N: usize> BorrowMut<[u8]> for ArrayBuf<N> {
 }
 
 #[cfg(feature = "std")]
-impl VecBuf {
+impl VecBuffer {
     #[inline]
     pub const fn new() -> Self {
         Self { mem: Vec::new() }
@@ -360,7 +367,7 @@ impl VecBuf {
 }
 
 #[cfg(feature = "std")]
-impl DirentBuf for VecBuf {
+impl DirentBuf for VecBuffer {
     #[inline]
     fn reset(&mut self) {
         unsafe { self.mem.set_len(0) };
@@ -406,7 +413,7 @@ impl DirentBuf for VecBuf {
 }
 
 #[cfg(feature = "std")]
-impl Deref for VecBuf {
+impl Deref for VecBuffer {
     type Target = [u8];
 
     #[inline]
@@ -416,7 +423,7 @@ impl Deref for VecBuf {
 }
 
 #[cfg(feature = "std")]
-impl DerefMut for VecBuf {
+impl DerefMut for VecBuffer {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.as_mut_slice()
@@ -424,7 +431,7 @@ impl DerefMut for VecBuf {
 }
 
 #[cfg(feature = "std")]
-impl AsRef<[u8]> for VecBuf {
+impl AsRef<[u8]> for VecBuffer {
     #[inline]
     fn as_ref(&self) -> &[u8] {
         self.as_slice()
@@ -432,7 +439,7 @@ impl AsRef<[u8]> for VecBuf {
 }
 
 #[cfg(feature = "std")]
-impl AsMut<[u8]> for VecBuf {
+impl AsMut<[u8]> for VecBuffer {
     #[inline]
     fn as_mut(&mut self) -> &mut [u8] {
         self.as_mut_slice()
@@ -440,7 +447,7 @@ impl AsMut<[u8]> for VecBuf {
 }
 
 #[cfg(feature = "std")]
-impl Borrow<[u8]> for VecBuf {
+impl Borrow<[u8]> for VecBuffer {
     #[inline]
     fn borrow(&self) -> &[u8] {
         self.as_slice()
@@ -448,7 +455,136 @@ impl Borrow<[u8]> for VecBuf {
 }
 
 #[cfg(feature = "std")]
-impl BorrowMut<[u8]> for VecBuf {
+impl BorrowMut<[u8]> for VecBuffer {
+    #[inline]
+    fn borrow_mut(&mut self) -> &mut [u8] {
+        self.as_mut_slice()
+    }
+}
+
+#[cfg(feature = "c")]
+impl CBuffer {
+    pub fn new() -> Self {
+        Self {
+            mem: core::ptr::null_mut(),
+            len: 0,
+            capacity: 0,
+        }
+    }
+}
+
+#[cfg(feature = "c")]
+impl Default for CBuffer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(feature = "c")]
+impl DirentBuf for CBuffer {
+    #[inline]
+    fn reset(&mut self) {
+        unsafe { self.set_len(0) };
+    }
+
+    fn reserve(&mut self, size: usize) -> Result<(), Errno> {
+        if size > self.capacity {
+            let mem = if self.mem.is_null() {
+                unsafe { libc::malloc(size) }
+            } else {
+                unsafe { libc::realloc(self.mem.cast(), size) }
+            };
+
+            if mem.is_null() {
+                return Err(Errno::ENOMEM);
+            }
+
+            self.mem = mem.cast();
+            self.capacity = size;
+        }
+
+        Ok(())
+    }
+
+    #[inline]
+    fn as_ptr(&self) -> *const u8 {
+        self.mem
+    }
+
+    #[inline]
+    fn as_mut_ptr(&mut self) -> *mut u8 {
+        self.mem
+    }
+
+    #[inline]
+    fn capacity(&self) -> usize {
+        self.capacity
+    }
+
+    #[inline]
+    fn len(&self) -> usize {
+        self.len
+    }
+
+    #[inline]
+    unsafe fn set_len(&mut self, len: usize) {
+        self.len = len;
+    }
+
+    fn shrink_to_fit(&mut self) {
+        let mem = unsafe { libc::realloc(self.mem.cast(), self.len) };
+
+        if !mem.is_null() {
+            self.mem = mem.cast();
+            self.capacity = self.len;
+        }
+    }
+}
+
+#[cfg(feature = "c")]
+impl Deref for CBuffer {
+    type Target = [u8];
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        self.as_slice()
+    }
+}
+
+#[cfg(feature = "c")]
+impl DerefMut for CBuffer {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.as_mut_slice()
+    }
+}
+
+#[cfg(feature = "c")]
+impl AsRef<[u8]> for CBuffer {
+    #[inline]
+    fn as_ref(&self) -> &[u8] {
+        self.as_slice()
+    }
+}
+
+#[cfg(feature = "c")]
+impl AsMut<[u8]> for CBuffer {
+    #[inline]
+    fn as_mut(&mut self) -> &mut [u8] {
+        self.as_mut_slice()
+    }
+}
+
+#[cfg(feature = "c")]
+impl Borrow<[u8]> for CBuffer {
+    #[inline]
+    fn borrow(&self) -> &[u8] {
+        self.as_slice()
+    }
+}
+
+#[cfg(feature = "c")]
+impl BorrowMut<[u8]> for CBuffer {
     #[inline]
     fn borrow_mut(&mut self) -> &mut [u8] {
         self.as_mut_slice()
