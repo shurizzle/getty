@@ -5,7 +5,7 @@ edition = "2018"
 
 [features]
 default = ["std"]
-std = []
+std = ["linux-syscalls/std", "linux-stat/std", "apple-errnos/std"]
 c = ["libc"]
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
