@@ -129,6 +129,21 @@ pub enum DirentFileType {
     Wht = 14,
 }
 
+impl From<DirentFileType> for linux_stat::FileType {
+    fn from(value: DirentFileType) -> Self {
+        match value {
+            DirentFileType::Character => Self::Character,
+            DirentFileType::Directory => Self::Directory,
+            DirentFileType::Fifo => Self::Fifo,
+            DirentFileType::Block => Self::Block,
+            DirentFileType::Regular => Self::Regular,
+            DirentFileType::Link => Self::Link,
+            DirentFileType::Socket => Self::Socket,
+            _ => Self::Unknown,
+        }
+    }
+}
+
 #[allow(non_camel_case_types)]
 #[repr(packed)]
 #[allow(dead_code)]

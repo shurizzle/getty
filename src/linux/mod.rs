@@ -87,34 +87,34 @@ fn try_path_guessing<B: DirentBuf>(
     }
 }
 
+#[inline]
+fn statat(dirfd: &Dir, file: &CStr) -> Result<linux_stat::Stat, Errno> {
+    loop {
+        match unsafe { fstatat_cstr(dirfd.as_raw_fd(), file, StatAtFlags::SYMLINK_NOFOLLOW) } {
+            Err(Errno::EINTR) => (),
+            other => return other,
+        }
+    }
+}
+
 fn try_path<B: DirentBuf>(
-    dirfd: &Dir,
+    md: linux_stat::Stat,
     file: &CStr,
     ttynr: Dev,
     path: &mut B,
 ) -> Result<Option<()>, Errno> {
-    loop {
-        unsafe {
-            match fstatat_cstr(dirfd.as_raw_fd(), file, StatAtFlags::SYMLINK_NOFOLLOW) {
-                Err(Errno::EINTR) => (),
-                Err(err) => return Err(err),
-                Ok(md) => {
-                    return if md.rdev() == ttynr {
-                        let file = file.to_bytes();
+    if md.rdev() == ttynr {
+        let file = file.to_bytes();
 
-                        path.reserve(path.len() + file.len() + 2)?;
+        path.reserve(path.len() + file.len() + 2)?;
 
-                        path.push_slice(b"/")?;
-                        path.push_slice(file)?;
-                        path.push_slice(b"\0")?;
+        path.push_slice(b"/")?;
+        path.push_slice(file)?;
+        path.push_slice(b"\0")?;
 
-                        Ok(Some(()))
-                    } else {
-                        Ok(None)
-                    };
-                }
-            }
-        }
+        Ok(Some(()))
+    } else {
+        Ok(None)
     }
 }
 
@@ -136,13 +136,27 @@ fn scandir<B1: DirentBuf, B2: DirentBuf>(
             continue;
         }
 
-        match entry.file_type() {
-            DirentFileType::Character => {
-                if Some(()) == try_path(&dupfd, name_cstr, ttynr, path)? {
+        let (ft, md) = match entry.file_type().into() {
+            linux_stat::FileType::Unknown => {
+                let md = statat(&dupfd, name_cstr)?;
+                (md.file_type(), Some(md))
+            }
+            ft => (ft, None),
+        };
+
+        match ft {
+            linux_stat::FileType::Character => {
+                let md = if let Some(md) = md {
+                    md
+                } else {
+                    statat(&dupfd, name_cstr)?
+                };
+
+                if Some(()) == try_path(md, name_cstr, ttynr, path)? {
                     return Ok(Some(()));
                 }
             }
-            DirentFileType::Directory => {
+            linux_stat::FileType::Directory => {
                 _ = dirit;
                 {
                     let new_dirfd = Dir::open_at(&dupfd, name_cstr)?;

@@ -47,14 +47,14 @@ impl RawProcessInfo {
             struct FdHolder(RawFd);
             impl Drop for FdHolder {
                 fn drop(&mut self) {
-                    _ = unsafe { syscall!(Sysno::close, self.0) };
+                    _ = unsafe { syscall!([ro] Sysno::close, self.0) };
                 }
             }
 
             let mut buf = MaybeUninit::<[u8; 1024]>::uninit();
             let mut len: usize = 0;
             {
-                let fd = syscall!(Sysno::open, path.as_ptr(), O_RDONLY | O_CLOEXEC)? as RawFd;
+                let fd = syscall!([ro] Sysno::open, path.as_ptr(), O_RDONLY | O_CLOEXEC)? as RawFd;
                 let _h = FdHolder(fd);
                 let mut b = core::slice::from_raw_parts_mut(buf.as_mut_ptr().cast::<u8>(), 1024);
                 while !b.is_empty() {
