@@ -19,6 +19,15 @@ pub use apple_errnos::Errno;
 pub type Dev = u32;
 
 #[derive(Debug, Clone)]
+pub struct RawProcessInfo {
+    pub pid: u32,
+    pub uid: u32,
+    pub gid: u32,
+    pub session: u32,
+    pub tty: Option<Dev>,
+}
+
+#[derive(Debug, Clone)]
 pub struct ProcessInfo {
     pub pid: u32,
     pub uid: u32,
@@ -27,7 +36,7 @@ pub struct ProcessInfo {
     pub tty: Option<TtyInfo>,
 }
 
-impl ProcessInfo {
+impl RawProcessInfo {
     #[inline]
     pub fn current() -> Result<Self, Errno> {
         Self::for_process(std::process::id())
@@ -52,7 +61,7 @@ impl ProcessInfo {
         let tty = if ki_proc.kp_eproc.e_tdev == -1 {
             None
         } else {
-            Some(TtyInfo::by_number(ki_proc.kp_eproc.e_tdev as Dev)?)
+            Some(ki_proc.kp_eproc.e_tdev as Dev)
         };
 
         Ok(Self {
@@ -61,6 +70,30 @@ impl ProcessInfo {
             gid,
             session,
             tty,
+        })
+    }
+}
+
+impl ProcessInfo {
+    #[inline]
+    pub fn current() -> Result<Self, Errno> {
+        ProcessInfo::for_process(std::process::id())
+    }
+
+    #[inline]
+    pub fn for_process(pid: u32) -> Result<Self, Errno> {
+        let info = RawProcessInfo::for_process(pid)?;
+
+        Ok(Self {
+            pid: info.pid,
+            uid: info.uid,
+            gid: info.gid,
+            session: info.session,
+            tty: if let Some(tty) = info.tty {
+                Some(TtyInfo::by_number(tty)?)
+            } else {
+                None
+            },
         })
     }
 }
