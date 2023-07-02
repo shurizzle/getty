@@ -481,6 +481,15 @@ impl Default for CBuffer {
 }
 
 #[cfg(feature = "c")]
+impl Drop for CBuffer {
+    fn drop(&mut self) {
+        if !self.mem.is_null() {
+            unsafe { libc::free(self.mem.cast()) };
+        }
+    }
+}
+
+#[cfg(feature = "c")]
 impl DirentBuf for CBuffer {
     #[inline]
     fn reset(&mut self) {
