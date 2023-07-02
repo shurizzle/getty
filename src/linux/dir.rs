@@ -13,16 +13,21 @@ const O_DIRECTORY: usize = 0o200000;
 const O_CLOEXEC: usize = 0o2000000;
 const O_RDONLY: usize = 0;
 
+/// An object providing access to an open directory on the filesystem.
+///
+/// Dirs are automatically closed when they go out of scope.
+/// Errors detected on closing are ignored by the implementation of Drop.
 pub struct Dir {
     fd: RawFd,
     tell: u64,
 }
 
 impl Dir {
-    pub fn open_at(fd: &Dir, file: &CStr) -> Result<Self, Errno> {
+    /// Attempts to open a directory by a `path` relative to `dir`.
+    pub fn open_at(dir: &Dir, path: &CStr) -> Result<Self, Errno> {
         loop {
             match unsafe {
-                syscall!([ro] Sysno::openat, fd.as_raw_fd(), file.as_ptr(), O_RDONLY | O_DIRECTORY | O_CLOEXEC, 0)
+                syscall!([ro] Sysno::openat, dir.as_raw_fd(), path.as_ptr(), O_RDONLY | O_DIRECTORY | O_CLOEXEC, 0)
             } {
                 Err(Errno::EINTR) => (),
                 Err(err) => return Err(err),
@@ -36,22 +41,31 @@ impl Dir {
         }
     }
 
+    /// Attempts to open a directory by a `path` relative to
+    /// current working directory.
     #[inline]
     pub fn open(file: &CStr) -> Result<Self, Errno> {
         let dir = ManuallyDrop::new(unsafe { Dir::from_raw_fd(CURRENT_DIRECTORY) });
         Self::open_at(&dir, file)
     }
 
+    /// Constructs a new instance of [Dir] from the given raw file descriptor.
+    ///
+    /// # Safety
+    ///
+    /// the `fd` passed in must be a valid and open file descriptor.
     #[inline]
     pub const unsafe fn from_raw_fd(fd: RawFd) -> Self {
         Self { fd, tell: 0 }
     }
 
+    /// Extract the raw file descriptor.
     #[inline]
     pub const fn as_raw_fd(&self) -> RawFd {
         self.fd
     }
 
+    /// Constructs a new [DirIterator].
     #[inline]
     pub fn iter<'a, B: DirentBuf>(
         &'a mut self,
@@ -67,40 +81,63 @@ impl Drop for Dir {
     }
 }
 
+/// A [DirentBuf] is a type of buffer which can handle filesystem paths and
+/// [DirEntry] buffers.
 pub trait DirentBuf:
     Deref<Target = [u8]> + DerefMut + AsRef<[u8]> + AsMut<[u8]> + Borrow<[u8]> + BorrowMut<[u8]>
 {
+    /// Clers the buffer, removing all values.
     fn reset(&mut self);
 
+    /// Reserves capacity for at least `size` elements to be inserted in the given buffer.
+    /// The buffer may reserve more space to speculatively avoid frequent reallocations. After
+    /// calling `reserve`, capacity will be greater than or equal to `size`.
     fn reserve(&mut self, size: usize) -> Result<(), Errno>;
 
+    /// Returns a raw pointer to the buffer, or a dangling raw pointer valid for sized reads if the
+    /// buffer didn't allocate.
     fn as_ptr(&self) -> *const u8;
 
+    /// Returns an unsafe mutable pointer to the buffer, or a dangling raw pointer valid for zero
+    /// sized reads if the vector didn't allocate.
     fn as_mut_ptr(&mut self) -> *mut u8;
 
+    /// Extracts a slice containing the entire buffer.
     #[inline]
     fn as_slice(&self) -> &[u8] {
         unsafe { core::slice::from_raw_parts(self.as_ptr(), self.len()) }
     }
 
+    /// Extracts a mutable slice containing the entire buffer.
     #[inline]
     fn as_mut_slice(&mut self) -> &mut [u8] {
         unsafe { core::slice::from_raw_parts_mut(self.as_mut_ptr(), self.len()) }
     }
 
+    /// Returns the total number of elements the vector can hold without reallocating.
     fn capacity(&self) -> usize;
 
+    /// Returns the number of elements in the vector, also referred to as its 'length'.
     fn len(&self) -> usize;
 
+    /// Returns `true` if the buffer contains no elements.
     #[inline]
     fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
-    unsafe fn set_len(&mut self, len: usize);
+    /// Forces the length of the vector to `new_len`.
+    ///
+    /// # Safety
+    ///
+    /// - `new_len` must be less than or equal to [Self::capacity()]
+    /// - The elements at `old_len..new_len` must be initialized.
+    unsafe fn set_len(&mut self, new_len: usize);
 
+    /// Shrinks the capacity of the buffer as much as possible.
     fn shrink_to_fit(&mut self);
 
+    /// Clones and appends all elements in a slice to the buffer.
     fn push_slice(&mut self, slice: &[u8]) -> Result<(), Errno> {
         let new_len = self.len() + slice.len();
         self.reserve(new_len)?;
@@ -117,6 +154,7 @@ pub trait DirentBuf:
         Ok(())
     }
 
+    /// Clones and appends all elements in a [CStr] to the buffer.
     #[inline]
     fn push_c_str(&mut self, s: &CStr) -> Result<(), Errno> {
         self.push_slice(s.to_bytes())
@@ -154,10 +192,10 @@ impl From<DirentFileType> for linux_stat::FileType {
     }
 }
 
-#[allow(non_camel_case_types)]
+/// A type representing a directory entry, returned by [DirIterator].
 #[repr(packed)]
 #[allow(dead_code)]
-pub struct dirent {
+pub struct DirEntry {
     ino: u64,
     off: u64,
     reclen: core::ffi::c_ushort,
@@ -165,6 +203,7 @@ pub struct dirent {
     name: [u8; 0],
 }
 
+/// An iterator over a filesystem directory.
 pub struct DirIterator<'a, B: DirentBuf> {
     dir: &'a mut Dir,
     buf: &'a mut B,
@@ -172,6 +211,7 @@ pub struct DirIterator<'a, B: DirentBuf> {
 }
 
 impl<'a, B: DirentBuf> DirIterator<'a, B> {
+    /// Creates a new iterator over directory `dir` using `buf` as a buffer.
     #[inline]
     pub fn new(dir: &'a mut Dir, buf: &'a mut B) -> Result<Self, Errno> {
         if dir.tell != 0 {
@@ -192,7 +232,7 @@ impl<'a, B: DirentBuf> DirIterator<'a, B> {
 }
 
 impl<'a, B: DirentBuf> Iterator for DirIterator<'a, B> {
-    type Item = Result<&'a dirent, Errno>;
+    type Item = Result<&'a DirEntry, Errno>;
 
     fn next(&mut self) -> Option<Self::Item> {
         #[inline(always)]
@@ -216,7 +256,7 @@ impl<'a, B: DirentBuf> Iterator for DirIterator<'a, B> {
         unsafe {
             let mut buf = self.buffer();
 
-            if buf.len() < core::mem::size_of::<dirent>() {
+            if buf.len() < core::mem::size_of::<DirEntry>() {
                 self.offset = 0;
                 if let Err(err) = getdents64(self.dir.fd, self.buf) {
                     return Some(Err(err));
@@ -224,10 +264,10 @@ impl<'a, B: DirentBuf> Iterator for DirIterator<'a, B> {
                 buf = self.buffer();
             }
 
-            if buf.len() < core::mem::size_of::<dirent>() {
+            if buf.len() < core::mem::size_of::<DirEntry>() {
                 None
             } else {
-                let res: &'a dirent = &*(buf.as_ptr().cast());
+                let res: &'a DirEntry = &*(buf.as_ptr().cast());
                 self.offset += res.len();
                 self.dir.tell = res.offset();
                 Some(Ok(res))
@@ -236,48 +276,57 @@ impl<'a, B: DirentBuf> Iterator for DirIterator<'a, B> {
     }
 }
 
-impl dirent {
+impl DirEntry {
+    /// Returns the inode for the entry.
     #[inline]
     pub const fn inode(&self) -> u64 {
         self.ino
     }
 
+    /// Returns the offset to the next directory entry.
     #[inline]
     const fn offset(&self) -> u64 {
         self.off
     }
 
+    /// Returns the file type for the entry.
     #[inline]
     pub const fn file_type(&self) -> DirentFileType {
         self.r#type
     }
 
+    /// Returns the file name for the entry.
     #[inline]
     pub fn name(&self) -> &CStr {
         unsafe { CStr::from_ptr(self.name.as_ptr().cast()) }
     }
 
+    /// Returns the total size of the entry.
     #[inline]
     pub const fn len(&self) -> usize {
         self.reclen as usize
     }
 
+    /// Returns true if the total size of the entry is `0`.
     #[inline]
     pub const fn is_empty(&self) -> bool {
         self.len() == 0
     }
 }
 
+/// A [DirentBuf] backed by a [u8] array.
 pub struct ArrayBuffer<const N: usize> {
     mem: MaybeUninit<[u8; N]>,
     len: usize,
 }
 
+/// A [DirentBuf] backed by a [`Vec<u8>`].
 #[cfg(feature = "std")]
 pub struct VecBuffer {
     mem: Vec<u8>,
 }
 
+/// A [DirentBuf] backed by a `malloc`ated [u8] array.
 #[cfg(feature = "c")]
 pub struct CBuffer {
     mem: *mut u8,
@@ -286,6 +335,7 @@ pub struct CBuffer {
 }
 
 impl<const N: usize> ArrayBuffer<N> {
+    /// Creates a new instance of [Self].
     #[inline]
     pub const fn new() -> Self {
         Self {
@@ -385,6 +435,7 @@ impl<const N: usize> BorrowMut<[u8]> for ArrayBuffer<N> {
 
 #[cfg(feature = "std")]
 impl VecBuffer {
+    /// Creates a new instance of [Self].
     #[inline]
     pub const fn new() -> Self {
         Self { mem: Vec::new() }
@@ -489,6 +540,7 @@ impl BorrowMut<[u8]> for VecBuffer {
 
 #[cfg(feature = "c")]
 impl CBuffer {
+    /// Creates a new instance of [Self].
     pub fn new() -> Self {
         Self {
             mem: core::ptr::null_mut(),
