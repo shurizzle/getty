@@ -4,8 +4,10 @@ use core::{
     ops::{Deref, DerefMut},
 };
 
-use linux_stat::{CStr, RawFd, CURRENT_DIRECTORY};
-use linux_syscalls::{syscall, Errno, Sysno};
+pub use crate::{CStr, Errno, RawFd};
+
+use linux_stat::CURRENT_DIRECTORY;
+use linux_syscalls::{syscall, Sysno};
 
 const O_DIRECTORY: usize = 0o200000;
 const O_CLOEXEC: usize = 0o2000000;

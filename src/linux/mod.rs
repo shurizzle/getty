@@ -23,15 +23,15 @@ const MAX_U32_LENGTH: usize = 10;
 
 #[derive(Clone)]
 pub struct TtyInfo<B: DirentBuf> {
-    nr: Dev,
+    dev: Dev,
     buf: B,
     offset: usize,
 }
 
 impl<B: DirentBuf> TtyInfo<B> {
     #[inline]
-    pub fn number(&self) -> Dev {
-        self.nr
+    pub fn device(&self) -> Dev {
+        self.dev
     }
 
     #[inline]
@@ -48,7 +48,7 @@ impl<B: DirentBuf> TtyInfo<B> {
 impl<B: DirentBuf> fmt::Debug for TtyInfo<B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("TtyInfo")
-            .field("number", &self.number())
+            .field("device", &self.device())
             .field("path", &self.path())
             .field("name", &self.name())
             .finish()
@@ -264,7 +264,7 @@ impl<B: DirentBuf> TtyInfo<B> {
             if Some(()) == find_in_dir(dir, guessing, rdev, buf, &mut path)? {
                 path.shrink_to_fit();
                 return Ok(TtyInfo {
-                    nr: rdev,
+                    dev: rdev,
                     buf: path,
                     offset: dir.to_bytes().len() + 1,
                 });

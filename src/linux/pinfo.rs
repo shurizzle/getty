@@ -1,10 +1,8 @@
-use core::mem::MaybeUninit;
+use core::{fmt, mem::MaybeUninit};
 
+use crate::{CStr, Dev, DirentBuf, Errno, RawFd, TtyInfo};
 use atoi::FromRadix10Signed;
-use linux_stat::{CStr, Dev, RawFd};
-use linux_syscalls::{syscall, Errno, Sysno};
-
-use crate::{DirentBuf, TtyInfo};
+use linux_syscalls::{syscall, Sysno};
 
 use super::{DirBuf, PathBuf};
 
@@ -133,11 +131,21 @@ impl RawProcessInfo {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ProcessInfo<B: DirentBuf> {
     pub pid: u32,
     pub session: u32,
     pub tty: Option<TtyInfo<B>>,
+}
+
+impl<B: DirentBuf> fmt::Debug for ProcessInfo<B> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ProcessInfo")
+            .field("pid", &self.pid)
+            .field("session", &self.session)
+            .field("tty", &self.tty)
+            .finish()
+    }
 }
 
 impl<B: DirentBuf> ProcessInfo<B> {
