@@ -126,7 +126,7 @@ fn scandir<B1: DirentBuf, B2: DirentBuf>(
 ) -> Result<Option<()>, Errno> {
     let dupfd = ManuallyDrop::new(unsafe { Dir::from_raw_fd(dirfd.as_raw_fd()) });
 
-    let mut dirit = DirIterator::new(&mut dirfd, buf)?;
+    let mut dirit = dirfd.iter(buf)?;
     while let Some(entry) = dirit.next() {
         let entry = entry?;
         let name_cstr = entry.name();
@@ -167,7 +167,7 @@ fn scandir<B1: DirentBuf, B2: DirentBuf>(
                     unsafe { path.set_len(old_len) };
                 }
 
-                dirit = DirIterator::new(&mut dirfd, buf)?;
+                dirit = dirfd.iter(buf)?;
             }
             _ => (),
         }

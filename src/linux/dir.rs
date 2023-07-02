@@ -51,6 +51,14 @@ impl Dir {
     pub const fn as_raw_fd(&self) -> RawFd {
         self.fd
     }
+
+    #[inline]
+    pub fn iter<'a, B: DirentBuf>(
+        &'a mut self,
+        buf: &'a mut B,
+    ) -> Result<DirIterator<'a, B>, Errno> {
+        DirIterator::new(self, buf)
+    }
 }
 
 impl Drop for Dir {
