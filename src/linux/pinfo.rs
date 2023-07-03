@@ -137,7 +137,7 @@ impl RawProcessInfo {
     }
 }
 
-/// Same as [RawProcessInfo] but with tty remapped to [TtyInfo].
+/// [RawProcessInfo] with `tty` field remapped to [TtyInfo].
 #[derive(Clone)]
 pub struct ProcessInfo<B: DirentBuf> {
     /// The process id.
