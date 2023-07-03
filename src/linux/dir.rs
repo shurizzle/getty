@@ -161,18 +161,26 @@ pub trait DirentBuf:
     }
 }
 
+/// File type for the [DirEntry] structure.
 #[repr(u8)]
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(dead_code)]
 pub enum DirentFileType {
     Unknown = 0,
+    /// FIFO pipe.
     Fifo = 1,
+    /// Character device.
     Character = 2,
+    /// Directory.
     Directory = 4,
+    /// Block device.
     Block = 6,
+    /// Regular file.
     Regular = 8,
+    /// Link file.
     Link = 10,
+    /// Unix socket.
     Socket = 12,
     Wht = 14,
 }
