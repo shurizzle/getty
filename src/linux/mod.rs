@@ -53,8 +53,8 @@ impl<B: DirentBuf> fmt::Debug for TtyInfo<B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("TtyInfo")
             .field("device", &self.device())
-            .field("path", &self.path())
             .field("name", &self.name())
+            .field("path", &self.path())
             .finish()
     }
 }
@@ -294,6 +294,41 @@ impl<B: DirentBuf> TtyInfo<B> {
         Err(Errno::ENOENT)
     }
 
+    /// Shortcut for [RawProcessInfo::current] + [Self::by_device_with_buffers_in].
+    #[inline]
+    pub fn current_with_buffers_in<'a, I, B1>(
+        dirs: I,
+        dirent_buf: &mut B1,
+        path_buf: B,
+    ) -> Result<Option<Self>, Errno>
+    where
+        I: IntoIterator<Item = &'a CStr>,
+        B1: DirentBuf,
+    {
+        RawProcessInfo::current()?
+            .tty_nr
+            .map(|rdev| Self::by_device_with_buffers_in(rdev, dirs, dirent_buf, path_buf))
+            .transpose()
+    }
+
+    /// Shortcut for [RawProcessInfo::for_process] + [Self::by_device_with_buffers_in].
+    #[inline]
+    pub fn for_process_with_buffers_in<'a, I, B1>(
+        pid: u32,
+        dirs: I,
+        dirent_buf: &mut B1,
+        path_buf: B,
+    ) -> Result<Option<Self>, Errno>
+    where
+        I: IntoIterator<Item = &'a CStr>,
+        B1: DirentBuf,
+    {
+        RawProcessInfo::for_process(pid)?
+            .tty_nr
+            .map(|rdev| Self::by_device_with_buffers_in(rdev, dirs, dirent_buf, path_buf))
+            .transpose()
+    }
+
     /// Same as [Self::by_device_with_buffers_in] but with default
     /// `dirs` ('/dev').
     pub fn by_device_with_buffers<B1: DirentBuf>(
@@ -302,6 +337,31 @@ impl<B: DirentBuf> TtyInfo<B> {
         path: B,
     ) -> Result<Self, Errno> {
         with_default_paths(|dirs| Self::by_device_with_buffers_in(rdev, dirs, buf, path))
+    }
+
+    /// Shortcut for [RawProcessInfo::current] + [Self::by_device_with_buffers].
+    #[inline]
+    pub fn current_with_buffers<B1: DirentBuf>(
+        dirent_buf: &mut B1,
+        path_buf: B,
+    ) -> Result<Option<Self>, Errno> {
+        RawProcessInfo::current()?
+            .tty_nr
+            .map(|rdev| Self::by_device_with_buffers(rdev, dirent_buf, path_buf))
+            .transpose()
+    }
+
+    /// Shortcut for [RawProcessInfo::for_process] + [Self::by_device_with_buffers].
+    #[inline]
+    pub fn for_process_with_buffers<B1: DirentBuf>(
+        pid: u32,
+        dirent_buf: &mut B1,
+        path_buf: B,
+    ) -> Result<Option<Self>, Errno> {
+        RawProcessInfo::for_process(pid)?
+            .tty_nr
+            .map(|rdev| Self::by_device_with_buffers(rdev, dirent_buf, path_buf))
+            .transpose()
     }
 }
 
@@ -315,10 +375,52 @@ impl TtyInfo<PathBuf> {
         Self::by_device_with_buffers_in(rdev, dirs, &mut DirBuf::new(), PathBuf::new())
     }
 
+    /// Shortcut for [RawProcessInfo::current] + [Self::by_device_in].
+    #[inline]
+    pub fn current_in<'a, I>(dirs: I) -> Result<Option<Self>, Errno>
+    where
+        I: IntoIterator<Item = &'a CStr>,
+    {
+        RawProcessInfo::current()?
+            .tty_nr
+            .map(|rdev| Self::by_device_in(rdev, dirs))
+            .transpose()
+    }
+
+    /// Shortcut for [RawProcessInfo::for_process] + [Self::by_device_in].
+    #[inline]
+    pub fn for_process_in<'a, I>(pid: u32, dirs: I) -> Result<Option<Self>, Errno>
+    where
+        I: IntoIterator<Item = &'a CStr>,
+    {
+        RawProcessInfo::for_process(pid)?
+            .tty_nr
+            .map(|rdev| Self::by_device_in(rdev, dirs))
+            .transpose()
+    }
+
     /// Same as [Self::by_device_with_buffers_in] but
     /// with default buffers and dirs.
     #[inline]
     pub fn by_device(rdev: Dev) -> Result<Self, Errno> {
         Self::by_device_with_buffers(rdev, &mut DirBuf::new(), PathBuf::new())
+    }
+
+    /// Shortcut for [RawProcessInfo::current] + [Self::by_device].
+    #[inline]
+    pub fn current() -> Result<Option<Self>, Errno> {
+        RawProcessInfo::current()?
+            .tty_nr
+            .map(Self::by_device)
+            .transpose()
+    }
+
+    /// Shortcut for [RawProcessInfo::for_process] + [Self::by_device].
+    #[inline]
+    pub fn for_process(pid: u32) -> Result<Option<Self>, Errno> {
+        RawProcessInfo::for_process(pid)?
+            .tty_nr
+            .map(Self::by_device)
+            .transpose()
     }
 }
