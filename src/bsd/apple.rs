@@ -16,32 +16,47 @@ mod sysctl {
 use core::{ffi::CStr, fmt};
 
 pub use apple_errnos::Errno;
+/// Device id.
 pub type Dev = u32;
 
+/// A process' informations useful to get tty informations.
 #[derive(Debug, Clone)]
 pub struct RawProcessInfo {
+    /// The process id.
     pub pid: u32,
+    /// The user id owning the process.
     pub uid: u32,
+    /// The group id owning the process.
     pub gid: u32,
+    /// The session id.
     pub session: u32,
+    /// The tty device id if process has one.
     pub tty: Option<Dev>,
 }
 
+/// [RawProcessInfo] with `tty` field remapped to [TtyInfo].
 #[derive(Debug, Clone)]
 pub struct ProcessInfo {
+    /// The process id.
     pub pid: u32,
+    /// The user id owning the process.
     pub uid: u32,
+    /// The group id owning the process.
     pub gid: u32,
+    /// The session id.
     pub session: u32,
+    /// The tty device informations if process has one.
     pub tty: Option<TtyInfo>,
 }
 
 impl RawProcessInfo {
+    /// Returns the informations for the current process.
     #[inline]
     pub fn current() -> Result<Self, Errno> {
         Self::for_process(std::process::id())
     }
 
+    /// Returns the informations for the `pid` process.
     pub fn for_process(pid: u32) -> Result<Self, Errno> {
         let session = unsafe { libc::getsid(pid as i32) as u32 };
 
@@ -75,11 +90,13 @@ impl RawProcessInfo {
 }
 
 impl ProcessInfo {
+    /// Calls [RawProcessInfo::current] and maps `tty` with [TtyInfo::by_device].
     #[inline]
     pub fn current() -> Result<Self, Errno> {
         ProcessInfo::for_process(std::process::id())
     }
 
+    /// Calls [RawProcessInfo::for_process] and maps `tty` with [TtyInfo::by_device].
     #[inline]
     pub fn for_process(pid: u32) -> Result<Self, Errno> {
         let info = RawProcessInfo::for_process(pid)?;
@@ -89,15 +106,12 @@ impl ProcessInfo {
             uid: info.uid,
             gid: info.gid,
             session: info.session,
-            tty: if let Some(tty) = info.tty {
-                Some(TtyInfo::by_number(tty)?)
-            } else {
-                None
-            },
+            tty: info.tty.map(TtyInfo::by_device).transpose()?,
         })
     }
 }
 
+/// A structure that contains informations about a tty.
 #[derive(Clone)]
 pub struct TtyInfo {
     nr: Dev,
@@ -105,22 +119,26 @@ pub struct TtyInfo {
 }
 
 impl TtyInfo {
+    /// Returns the device number.
     #[inline]
-    pub const fn number(&self) -> Dev {
+    pub const fn device(&self) -> Dev {
         self.nr
     }
 
+    /// Returns the device full path.
     #[inline]
     pub fn path(&self) -> &CStr {
         unsafe { CStr::from_ptr(self.buf.cast()) }
     }
 
+    /// Returns the device full path.
     #[inline]
     pub fn name(&self) -> &CStr {
         unsafe { CStr::from_ptr(self.buf.add(5).cast()) }
     }
 
-    pub fn by_number(rdev: Dev) -> Result<TtyInfo, Errno> {
+    /// Find a tty by its device number.
+    pub fn by_device(rdev: Dev) -> Result<TtyInfo, Errno> {
         unsafe {
             let name = bsd::devname(rdev as _, libc::S_IFCHR);
             if name.is_null() {
@@ -141,6 +159,24 @@ impl TtyInfo {
             Ok(TtyInfo { nr: rdev, buf })
         }
     }
+
+    /// Shortcut for [RawProcessInfo::current] + [Self::by_device].
+    #[inline]
+    pub fn current() -> Result<Option<Self>, Errno> {
+        RawProcessInfo::current()?
+            .tty
+            .map(Self::by_device)
+            .transpose()
+    }
+
+    /// Shortcut for [RawProcessInfo::for_process] + [Self::by_device].
+    #[inline]
+    pub fn for_process(pid: u32) -> Result<Option<Self>, Errno> {
+        RawProcessInfo::for_process(pid)?
+            .tty
+            .map(Self::by_device)
+            .transpose()
+    }
 }
 
 impl Drop for TtyInfo {
@@ -153,8 +189,8 @@ impl Drop for TtyInfo {
 impl fmt::Debug for TtyInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("TtyInfo")
-            .field("path", &self.path())
             .field("name", &self.name())
+            .field("path", &self.path())
             .finish()
     }
 }
