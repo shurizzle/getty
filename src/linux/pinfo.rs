@@ -160,7 +160,7 @@ impl<B: DirentBuf> ProcessInfo<B> {
             pid: raw.pid,
             session: raw.session,
             tty: if let Some(tty_nr) = raw.tty_nr {
-                Some(TtyInfo::by_number_with_buffers_in(tty_nr, dirs, buf, path)?)
+                Some(TtyInfo::by_device_with_buffers_in(tty_nr, dirs, buf, path)?)
             } else {
                 None
             },
@@ -183,34 +183,27 @@ impl<B: DirentBuf> ProcessInfo<B> {
             pid: raw.pid,
             session: raw.session,
             tty: if let Some(tty_nr) = raw.tty_nr {
-                Some(TtyInfo::by_number_with_buffers_in(tty_nr, dirs, buf, path)?)
+                Some(TtyInfo::by_device_with_buffers_in(tty_nr, dirs, buf, path)?)
             } else {
                 None
             },
         })
     }
 
+    #[inline]
     pub fn current_with_buffers<B1>(buf: &mut B1, path: B) -> Result<Self, Errno>
     where
         B1: DirentBuf,
     {
-        Self::current_with_buffers_in(
-            [unsafe { CStr::from_bytes_with_nul_unchecked(b"/dev\0") }],
-            buf,
-            path,
-        )
+        crate::with_default_paths(|dirs| Self::current_with_buffers_in(dirs, buf, path))
     }
 
+    #[inline]
     pub fn for_process_with_buffers<B1>(pid: u32, buf: &mut B1, path: B) -> Result<Self, Errno>
     where
         B1: DirentBuf,
     {
-        Self::for_process_with_buffers_in(
-            pid,
-            [unsafe { CStr::from_bytes_with_nul_unchecked(b"/dev\0") }],
-            buf,
-            path,
-        )
+        crate::with_default_paths(|dirs| Self::for_process_with_buffers_in(pid, dirs, buf, path))
     }
 }
 

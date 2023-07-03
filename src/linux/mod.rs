@@ -21,6 +21,7 @@ const TTY_USB_MAJOR: u32 = 188;
 const NR_CONSOLES: u32 = 64;
 const MAX_U32_LENGTH: usize = 10;
 
+/// A structure that contains informations about a tty.
 #[derive(Clone)]
 pub struct TtyInfo<B: DirentBuf> {
     dev: Dev,
@@ -29,16 +30,19 @@ pub struct TtyInfo<B: DirentBuf> {
 }
 
 impl<B: DirentBuf> TtyInfo<B> {
+    /// Returns the device number.
     #[inline]
     pub fn device(&self) -> Dev {
         self.dev
     }
 
+    /// Returns the device full path.
     #[inline]
     pub fn path(&self) -> &CStr {
         unsafe { CStr::from_ptr(self.buf.as_ptr().cast()) }
     }
 
+    /// Returns the device full path.
     #[inline]
     pub fn name(&self) -> &CStr {
         unsafe { CStr::from_ptr(self.buf.as_ptr().add(self.offset).cast()) }
@@ -97,6 +101,7 @@ fn statat(dirfd: &Dir, file: &CStr) -> Result<linux_stat::Stat, Errno> {
     }
 }
 
+#[inline(always)]
 fn try_path<B: DirentBuf>(
     md: linux_stat::Stat,
     file: &CStr,
@@ -190,6 +195,7 @@ type PathBuf = CBuffer;
 #[cfg(all(not(feature = "c"), not(feature = "std")))]
 type PathBuf = ArrayBuffer<4096>;
 
+#[inline(always)]
 fn find_in_dir<B1: DirentBuf, B2: DirentBuf>(
     dir: &CStr,
     guessing: &CStr,
@@ -225,12 +231,26 @@ fn concat_cstr_number<const N: usize>(
     }
 }
 
+#[inline(always)]
+pub(crate) fn with_default_paths<'a, T, F: FnOnce([&'a CStr; 1]) -> T>(f: F) -> T {
+    f([unsafe { CStr::from_bytes_with_nul_unchecked(b"/dev\0") }])
+}
+
 impl<B: DirentBuf> TtyInfo<B> {
-    pub fn by_number_with_buffers_in<'a, I, B1>(
+    /// Find a tty by its device number in `dir` using `dirent_buf` as dirent
+    /// buffer and `path_buf` as filesystem path buffer.
+    ///
+    /// # Errors
+    ///
+    /// Returns [Errno::ENOTTY] if major device number is not a valid tty and
+    /// [Errno::ENOENT] if it is not present. Other [Errno]s can be returned
+    /// due to `open`, `getdents64`, `lseek` and `fstatat` syscalls
+    /// or memory allocations.
+    pub fn by_device_with_buffers_in<'a, I, B1>(
         rdev: Dev,
         dirs: I,
-        buf: &mut B1,
-        mut path: B,
+        dirent_buf: &mut B1,
+        mut path_buf: B,
     ) -> Result<Self, Errno>
     where
         I: IntoIterator<Item = &'a CStr>,
@@ -261,11 +281,11 @@ impl<B: DirentBuf> TtyInfo<B> {
         let guessing = unsafe { CStr::from_ptr(guess_buf.as_slice().as_ptr().cast()) };
 
         for dir in dirs {
-            if Some(()) == find_in_dir(dir, guessing, rdev, buf, &mut path)? {
-                path.shrink_to_fit();
+            if Some(()) == find_in_dir(dir, guessing, rdev, dirent_buf, &mut path_buf)? {
+                path_buf.shrink_to_fit();
                 return Ok(TtyInfo {
                     dev: rdev,
-                    buf: path,
+                    buf: path_buf,
                     offset: dir.to_bytes().len() + 1,
                 });
             }
@@ -274,31 +294,31 @@ impl<B: DirentBuf> TtyInfo<B> {
         Err(Errno::ENOENT)
     }
 
-    pub fn by_number_with_buffers<B1: DirentBuf>(
+    /// Same as [Self::by_device_with_buffers_in] but with default
+    /// `dirs` ('/dev').
+    pub fn by_device_with_buffers<B1: DirentBuf>(
         rdev: Dev,
         buf: &mut B1,
         path: B,
     ) -> Result<Self, Errno> {
-        Self::by_number_with_buffers_in(
-            rdev,
-            [unsafe { CStr::from_bytes_with_nul_unchecked(b"/dev\0") }],
-            buf,
-            path,
-        )
+        with_default_paths(|dirs| Self::by_device_with_buffers_in(rdev, dirs, buf, path))
     }
 }
 
 impl TtyInfo<PathBuf> {
+    /// Same as [Self::by_device_with_buffers_in] but with default buffers.
     #[inline]
-    pub fn by_number_in<'a, I>(rdev: Dev, dirs: I) -> Result<Self, Errno>
+    pub fn by_device_in<'a, I>(rdev: Dev, dirs: I) -> Result<Self, Errno>
     where
         I: IntoIterator<Item = &'a CStr>,
     {
-        Self::by_number_with_buffers_in(rdev, dirs, &mut DirBuf::new(), PathBuf::new())
+        Self::by_device_with_buffers_in(rdev, dirs, &mut DirBuf::new(), PathBuf::new())
     }
 
+    /// Same as [Self::by_device_with_buffers_in] but
+    /// with default buffers and dirs.
     #[inline]
-    pub fn by_number(rdev: Dev) -> Result<Self, Errno> {
-        Self::by_number_with_buffers(rdev, &mut DirBuf::new(), PathBuf::new())
+    pub fn by_device(rdev: Dev) -> Result<Self, Errno> {
+        Self::by_device_with_buffers(rdev, &mut DirBuf::new(), PathBuf::new())
     }
 }
