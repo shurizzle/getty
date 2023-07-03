@@ -306,7 +306,7 @@ impl<B: DirentBuf> TtyInfo<B> {
         B1: DirentBuf,
     {
         RawProcessInfo::current()?
-            .tty_nr
+            .tty
             .map(|rdev| Self::by_device_with_buffers_in(rdev, dirs, dirent_buf, path_buf))
             .transpose()
     }
@@ -324,7 +324,7 @@ impl<B: DirentBuf> TtyInfo<B> {
         B1: DirentBuf,
     {
         RawProcessInfo::for_process(pid)?
-            .tty_nr
+            .tty
             .map(|rdev| Self::by_device_with_buffers_in(rdev, dirs, dirent_buf, path_buf))
             .transpose()
     }
@@ -346,7 +346,7 @@ impl<B: DirentBuf> TtyInfo<B> {
         path_buf: B,
     ) -> Result<Option<Self>, Errno> {
         RawProcessInfo::current()?
-            .tty_nr
+            .tty
             .map(|rdev| Self::by_device_with_buffers(rdev, dirent_buf, path_buf))
             .transpose()
     }
@@ -359,7 +359,7 @@ impl<B: DirentBuf> TtyInfo<B> {
         path_buf: B,
     ) -> Result<Option<Self>, Errno> {
         RawProcessInfo::for_process(pid)?
-            .tty_nr
+            .tty
             .map(|rdev| Self::by_device_with_buffers(rdev, dirent_buf, path_buf))
             .transpose()
     }
@@ -382,7 +382,7 @@ impl TtyInfo<PathBuf> {
         I: IntoIterator<Item = &'a CStr>,
     {
         RawProcessInfo::current()?
-            .tty_nr
+            .tty
             .map(|rdev| Self::by_device_in(rdev, dirs))
             .transpose()
     }
@@ -394,7 +394,7 @@ impl TtyInfo<PathBuf> {
         I: IntoIterator<Item = &'a CStr>,
     {
         RawProcessInfo::for_process(pid)?
-            .tty_nr
+            .tty
             .map(|rdev| Self::by_device_in(rdev, dirs))
             .transpose()
     }
@@ -410,7 +410,7 @@ impl TtyInfo<PathBuf> {
     #[inline]
     pub fn current() -> Result<Option<Self>, Errno> {
         RawProcessInfo::current()?
-            .tty_nr
+            .tty
             .map(Self::by_device)
             .transpose()
     }
@@ -419,7 +419,7 @@ impl TtyInfo<PathBuf> {
     #[inline]
     pub fn for_process(pid: u32) -> Result<Option<Self>, Errno> {
         RawProcessInfo::for_process(pid)?
-            .tty_nr
+            .tty
             .map(Self::by_device)
             .transpose()
     }

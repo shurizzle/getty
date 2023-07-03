@@ -32,11 +32,15 @@ unsafe fn skip_space(buf: &[u8]) -> Result<&[u8], Errno> {
     skip_char(buf, b' ')
 }
 
+/// A process' informations useful to get tty informations.
 #[derive(Debug, Clone, Copy, Hash)]
 pub struct RawProcessInfo {
+    /// The process id.
     pub pid: u32,
+    /// The session id.
     pub session: u32,
-    pub tty_nr: Option<Dev>,
+    /// The tty device id if process has one.
+    pub tty: Option<Dev>,
 }
 
 impl RawProcessInfo {
@@ -102,16 +106,18 @@ impl RawProcessInfo {
             Ok(Self {
                 pid,
                 session,
-                tty_nr,
+                tty: tty_nr,
             })
         }
     }
 
+    /// Returns the informations for the current process.
     #[inline]
     pub fn current() -> Result<Self, Errno> {
         Self::parse(unsafe { CStr::from_ptr(SELF_INFO_PATH.as_ptr().cast()) })
     }
 
+    /// Returns the informations for the `pid` process.
     pub fn for_process(pid: u32) -> Result<Self, Errno> {
         use itoap::Integer;
 
@@ -131,10 +137,14 @@ impl RawProcessInfo {
     }
 }
 
+/// Same as [RawProcessInfo] but with tty remapped to [TtyInfo].
 #[derive(Clone)]
 pub struct ProcessInfo<B: DirentBuf> {
+    /// The process id.
     pub pid: u32,
+    /// The session id.
     pub session: u32,
+    /// The tty device informations if process has one.
     pub tty: Option<TtyInfo<B>>,
 }
 
@@ -149,7 +159,12 @@ impl<B: DirentBuf> fmt::Debug for ProcessInfo<B> {
 }
 
 impl<B: DirentBuf> ProcessInfo<B> {
-    pub fn current_with_buffers_in<'a, I, B1>(dirs: I, buf: &mut B1, path: B) -> Result<Self, Errno>
+    /// Calls [RawProcessInfo::current] and maps `tty` with [TtyInfo::by_device_with_buffers_in].
+    pub fn current_with_buffers_in<'a, I, B1>(
+        dirs: I,
+        dirent_buf: &mut B1,
+        path_buf: B,
+    ) -> Result<Self, Errno>
     where
         I: IntoIterator<Item = &'a CStr>,
         B1: DirentBuf,
@@ -159,19 +174,19 @@ impl<B: DirentBuf> ProcessInfo<B> {
         Ok(Self {
             pid: raw.pid,
             session: raw.session,
-            tty: if let Some(tty_nr) = raw.tty_nr {
-                Some(TtyInfo::by_device_with_buffers_in(tty_nr, dirs, buf, path)?)
-            } else {
-                None
-            },
+            tty: raw
+                .tty
+                .map(|rdev| TtyInfo::by_device_with_buffers_in(rdev, dirs, dirent_buf, path_buf))
+                .transpose()?,
         })
     }
 
+    /// Calls [RawProcessInfo::for_process] and maps `tty` with [TtyInfo::by_device_with_buffers_in].
     pub fn for_process_with_buffers_in<'a, I, B1>(
         pid: u32,
         dirs: I,
-        buf: &mut B1,
-        path: B,
+        dirent_buf: &mut B1,
+        path_buf: B,
     ) -> Result<Self, Errno>
     where
         I: IntoIterator<Item = &'a CStr>,
@@ -182,32 +197,40 @@ impl<B: DirentBuf> ProcessInfo<B> {
         Ok(Self {
             pid: raw.pid,
             session: raw.session,
-            tty: if let Some(tty_nr) = raw.tty_nr {
-                Some(TtyInfo::by_device_with_buffers_in(tty_nr, dirs, buf, path)?)
-            } else {
-                None
-            },
+            tty: raw
+                .tty
+                .map(|rdev| TtyInfo::by_device_with_buffers_in(rdev, dirs, dirent_buf, path_buf))
+                .transpose()?,
         })
     }
 
+    /// Calls [RawProcessInfo::current] and maps `tty` with [TtyInfo::by_device_with_buffers].
     #[inline]
-    pub fn current_with_buffers<B1>(buf: &mut B1, path: B) -> Result<Self, Errno>
+    pub fn current_with_buffers<B1>(dirent_buf: &mut B1, path_buf: B) -> Result<Self, Errno>
     where
         B1: DirentBuf,
     {
-        crate::with_default_paths(|dirs| Self::current_with_buffers_in(dirs, buf, path))
+        crate::with_default_paths(|dirs| Self::current_with_buffers_in(dirs, dirent_buf, path_buf))
     }
 
+    /// Calls [RawProcessInfo::for_process] and maps `tty` with [TtyInfo::by_device_with_buffers].
     #[inline]
-    pub fn for_process_with_buffers<B1>(pid: u32, buf: &mut B1, path: B) -> Result<Self, Errno>
+    pub fn for_process_with_buffers<B1>(
+        pid: u32,
+        dirent_buf: &mut B1,
+        path_buf: B,
+    ) -> Result<Self, Errno>
     where
         B1: DirentBuf,
     {
-        crate::with_default_paths(|dirs| Self::for_process_with_buffers_in(pid, dirs, buf, path))
+        crate::with_default_paths(|dirs| {
+            Self::for_process_with_buffers_in(pid, dirs, dirent_buf, path_buf)
+        })
     }
 }
 
 impl ProcessInfo<PathBuf> {
+    /// Calls [RawProcessInfo::current] and maps `tty` with [TtyInfo::by_device_in].
     #[inline]
     pub fn current_in<'a, I>(dirs: I) -> Result<Self, Errno>
     where
@@ -216,6 +239,7 @@ impl ProcessInfo<PathBuf> {
         Self::current_with_buffers_in(dirs, &mut DirBuf::new(), PathBuf::new())
     }
 
+    /// Calls [RawProcessInfo::for_process] and maps `tty` with [TtyInfo::by_device_in].
     #[inline]
     pub fn for_process_in<'a, I>(pid: u32, dirs: I) -> Result<Self, Errno>
     where
@@ -224,11 +248,13 @@ impl ProcessInfo<PathBuf> {
         Self::for_process_with_buffers_in(pid, dirs, &mut DirBuf::new(), PathBuf::new())
     }
 
+    /// Calls [RawProcessInfo::current] and maps `tty` with [TtyInfo::by_device].
     #[inline]
     pub fn current() -> Result<Self, Errno> {
         Self::current_with_buffers(&mut DirBuf::new(), PathBuf::new())
     }
 
+    /// Calls [RawProcessInfo::for_process] and maps `tty` with [TtyInfo::by_device].
     #[inline]
     pub fn for_process(pid: u32) -> Result<Self, Errno> {
         Self::for_process_with_buffers(pid, &mut DirBuf::new(), PathBuf::new())
