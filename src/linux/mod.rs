@@ -23,7 +23,7 @@ const MAX_U32_LENGTH: usize = 10;
 
 /// A structure that contains informations about a tty.
 #[derive(Clone)]
-pub struct TtyInfo<B: DirentBuf> {
+pub struct TtyInfo<B: DirentBuf = PathBuf> {
     dev: Dev,
     buf: B,
     offset: usize,
