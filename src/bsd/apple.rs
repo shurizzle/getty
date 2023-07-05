@@ -13,7 +13,8 @@ mod sysctl {
     include!(concat!(env!("OUT_DIR"), "/bindings/sysctl.rs"));
 }
 
-use core::{ffi::CStr, fmt};
+pub use core::ffi::CStr;
+use core::fmt;
 
 pub use apple_errnos::Errno;
 /// Device id.
