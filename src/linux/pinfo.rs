@@ -2,6 +2,7 @@ use core::{fmt, mem::MaybeUninit};
 
 use crate::{CStr, Dev, DirentBuf, Errno, RawFd, TtyInfo};
 use atoi::FromRadix10Signed;
+use linux_stat::CURRENT_DIRECTORY;
 use linux_syscalls::{syscall, Sysno};
 
 use super::{DirBuf, PathBuf};
@@ -56,7 +57,8 @@ impl RawProcessInfo {
             let mut buf = MaybeUninit::<[u8; 1024]>::uninit();
             let mut len: usize = 0;
             {
-                let fd = syscall!([ro] Sysno::open, path.as_ptr(), O_RDONLY | O_CLOEXEC)? as RawFd;
+                let fd = syscall!([ro] Sysno::openat, CURRENT_DIRECTORY, path.as_ptr(), O_RDONLY | O_CLOEXEC)?
+                    as RawFd;
                 let _h = FdHolder(fd);
                 let mut b = core::slice::from_raw_parts_mut(buf.as_mut_ptr().cast::<u8>(), 1024);
                 while !b.is_empty() {
