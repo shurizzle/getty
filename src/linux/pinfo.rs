@@ -2,14 +2,13 @@ use core::{fmt, mem::MaybeUninit};
 
 use crate::{CStr, Dev, DirentBuf, Errno, RawFd, TtyInfo};
 use atoi::FromRadix10Signed;
+use linux_defs::O;
 use linux_stat::CURRENT_DIRECTORY;
 use linux_syscalls::{syscall, Sysno};
 
 use super::{DirBuf, PathBuf};
 
 const SELF_INFO_PATH: &[u8] = b"/proc/self/stat\0".as_slice();
-const O_CLOEXEC: usize = 0o2000000;
-const O_RDONLY: usize = 0;
 
 unsafe fn parse_num<T: FromRadix10Signed>(buf: &[u8]) -> Result<(T, &[u8]), Errno> {
     let (res, len) = T::from_radix_10_signed(buf);
@@ -46,6 +45,8 @@ pub struct RawProcessInfo {
 
 impl RawProcessInfo {
     fn parse(path: &CStr) -> Result<Self, Errno> {
+        let path = path.as_ptr();
+
         unsafe {
             struct FdHolder(RawFd);
             impl Drop for FdHolder {
@@ -57,8 +58,16 @@ impl RawProcessInfo {
             let mut buf = MaybeUninit::<[u8; 1024]>::uninit();
             let mut len: usize = 0;
             {
-                let fd = syscall!([ro] Sysno::openat, CURRENT_DIRECTORY, path.as_ptr(), O_RDONLY | O_CLOEXEC)?
-                    as RawFd;
+                let flags = (O::RDONLY | O::CLOEXEC).bits();
+
+                let fd = loop {
+                    match syscall!([ro] Sysno::openat, CURRENT_DIRECTORY, path, flags) {
+                        Err(Errno::EINTR) => (),
+                        Err(err) => return Err(err),
+                        Ok(fd) => break fd as RawFd,
+                    }
+                };
+
                 let _h = FdHolder(fd);
                 let mut b = core::slice::from_raw_parts_mut(buf.as_mut_ptr().cast::<u8>(), 1024);
                 while !b.is_empty() {
@@ -68,7 +77,7 @@ impl RawProcessInfo {
                             len += n;
                             b = b.get_unchecked_mut(n..);
                         }
-                        Err(Errno::EAGAIN) | Err(Errno::EINTR) => (),
+                        Err(Errno::EINTR) => (),
                         Err(err) => return Err(err),
                     }
                 }

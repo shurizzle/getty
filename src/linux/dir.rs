@@ -6,12 +6,9 @@ use core::{
 
 pub use crate::{CStr, Errno, RawFd};
 
+use linux_defs::{SeekWhence, O};
 use linux_stat::CURRENT_DIRECTORY;
 use linux_syscalls::{syscall, Sysno};
-
-const O_DIRECTORY: usize = 0o200000;
-const O_CLOEXEC: usize = 0o2000000;
-const O_RDONLY: usize = 0;
 
 /// An object providing access to an open directory on the filesystem.
 ///
@@ -25,10 +22,12 @@ pub struct Dir {
 impl Dir {
     /// Attempts to open a directory by a `path` relative to `dir`.
     pub fn open_at(dir: &Dir, path: &CStr) -> Result<Self, Errno> {
+        let dir = dir.as_raw_fd();
+        let path = path.as_ptr();
+        let flags = (O::RDONLY | O::DIRECTORY | O::CLOEXEC).bits();
+
         loop {
-            match unsafe {
-                syscall!([ro] Sysno::openat, dir.as_raw_fd(), path.as_ptr(), O_RDONLY | O_DIRECTORY | O_CLOEXEC, 0)
-            } {
+            match unsafe { syscall!([ro] Sysno::openat, dir, path, flags, 0o666) } {
                 Err(Errno::EINTR) => (),
                 Err(err) => return Err(err),
                 Ok(x) => {
@@ -223,7 +222,13 @@ impl<'a, B: DirentBuf> DirIterator<'a, B> {
     #[inline]
     pub fn new(dir: &'a mut Dir, buf: &'a mut B) -> Result<Self, Errno> {
         if dir.tell != 0 {
-            unsafe { syscall!([ro] Sysno::lseek, dir.fd, dir.tell, 0)? };
+            loop {
+                match unsafe { syscall!([ro] Sysno::lseek, dir.fd, dir.tell, SeekWhence::SET) } {
+                    Err(Errno::EINTR) => (),
+                    Err(err) => return Err(err),
+                    Ok(_) => break,
+                }
+            }
         }
 
         Ok(Self {
