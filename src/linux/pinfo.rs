@@ -2,7 +2,7 @@ use core::{fmt, mem::MaybeUninit};
 
 use crate::{CStr, Dev, DirentBuf, Errno, RawFd, TtyInfo};
 use atoi::FromRadix10Signed;
-use linux_defs::O;
+use linux_raw_sys::general::{O_CLOEXEC, O_RDONLY};
 use linux_stat::CURRENT_DIRECTORY;
 use linux_syscalls::{syscall, Sysno};
 
@@ -58,7 +58,7 @@ impl RawProcessInfo {
             let mut buf = MaybeUninit::<[u8; 1024]>::uninit();
             let mut len: usize = 0;
             {
-                let flags = (O::RDONLY | O::CLOEXEC).bits();
+                let flags = O_RDONLY | O_CLOEXEC;
 
                 let fd = loop {
                     match syscall!([ro] Sysno::openat, CURRENT_DIRECTORY, path, flags) {

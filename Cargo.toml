@@ -1,7 +1,7 @@
 [package]
 name = "tty-info"
 version = "0.1.0"
-edition = "2018"
+edition = "2021"
 
 [features]
 default = ["std"]
@@ -9,16 +9,16 @@ std = ["linux-syscalls/std", "linux-stat/std", "apple-errnos/std"]
 c = ["libc"]
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
-apple-errnos = { version = "0.1.1", default-features = false }
+apple-errnos = { version = "0.1.2", default-features = false }
 libc = "0.2.147"
 
 [build-dependencies]
 bindgen = "0.66.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-linux-syscalls = { version = "0.1.2", default-features = false }
-linux-stat = { version = "0.3.0", default-features = false }
-linux-defs = { git = "https://www.github.com/shurizzle/linux-defs.git" }
+linux-syscalls = { version = "0.2.0", default-features = false }
+linux-stat = { version = "0.3.1", default-features = false }
+linux-raw-sys = "0.4.3"
 itoap = { version = "1.0.1", features = ["simd"] }
 atoi = "2.0.0"
 memchr = "2.5.0"

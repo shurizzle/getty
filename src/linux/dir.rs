@@ -6,7 +6,7 @@ use core::{
 
 pub use crate::{CStr, Errno, RawFd};
 
-use linux_defs::{SeekWhence, O};
+use linux_raw_sys::general::{O_CLOEXEC, O_DIRECTORY, O_RDONLY, SEEK_SET};
 use linux_stat::CURRENT_DIRECTORY;
 use linux_syscalls::{syscall, Sysno};
 
@@ -24,7 +24,7 @@ impl Dir {
     pub fn open_at(dir: &Dir, path: &CStr) -> Result<Self, Errno> {
         let dir = dir.as_raw_fd();
         let path = path.as_ptr();
-        let flags = (O::RDONLY | O::DIRECTORY | O::CLOEXEC).bits();
+        let flags = O_RDONLY | O_DIRECTORY | O_CLOEXEC;
 
         loop {
             match unsafe { syscall!([ro] Sysno::openat, dir, path, flags, 0o666) } {
@@ -223,7 +223,7 @@ impl<'a, B: DirentBuf> DirIterator<'a, B> {
     pub fn new(dir: &'a mut Dir, buf: &'a mut B) -> Result<Self, Errno> {
         if dir.tell != 0 {
             loop {
-                match unsafe { syscall!([ro] Sysno::lseek, dir.fd, dir.tell, SeekWhence::SET) } {
+                match unsafe { syscall!([ro] Sysno::lseek, dir.fd, dir.tell, SEEK_SET) } {
                     Err(Errno::EINTR) => (),
                     Err(err) => return Err(err),
                     Ok(_) => break,
