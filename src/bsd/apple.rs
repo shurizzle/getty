@@ -29,8 +29,6 @@ pub struct RawProcessInfo {
     pub uid: u32,
     /// The group id owning the process.
     pub gid: u32,
-    /// The session id.
-    pub session: u32,
     /// The tty device id if process has one.
     pub tty: Option<Dev>,
 }
@@ -44,8 +42,6 @@ pub struct ProcessInfo {
     pub uid: u32,
     /// The group id owning the process.
     pub gid: u32,
-    /// The session id.
-    pub session: u32,
     /// The tty device informations if process has one.
     pub tty: Option<TtyInfo>,
 }
@@ -59,8 +55,6 @@ impl RawProcessInfo {
 
     /// Returns the informations for the `pid` process.
     pub fn for_process(pid: u32) -> Result<Self, Errno> {
-        let session = unsafe { libc::getsid(pid as i32) as u32 };
-
         let ki_proc = bsd::proc_info::<sysctl::kinfo_proc>(
             [
                 libc::CTL_KERN,
@@ -84,7 +78,6 @@ impl RawProcessInfo {
             pid,
             uid,
             gid,
-            session,
             tty,
         })
     }
@@ -106,7 +99,6 @@ impl ProcessInfo {
             pid: info.pid,
             uid: info.uid,
             gid: info.gid,
-            session: info.session,
             tty: info.tty.map(TtyInfo::by_device).transpose()?,
         })
     }
