@@ -9,11 +9,11 @@ fn main() {
 
     let os = std::env::var("CARGO_CFG_TARGET_OS").unwrap();
 
-    if os == "macos" || os == "ios" {
+    if os == "macos" || os == "ios" || os == "watchos" || os == "tvos" {
         let bindings = bindgen::Builder::default()
             .header_contents("wrapper.h", "#include <sys/sysctl.h>")
             .parse_callbacks(Box::new(bindgen::CargoCallbacks))
-            .ctypes_prefix("libc")
+            .ctypes_prefix("::libc")
             .generate()
             .expect("Unable to generate bindings");
 
