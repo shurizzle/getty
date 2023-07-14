@@ -50,6 +50,26 @@ impl RawProcessInfo {
 
     /// Returns the informations for the `pid` process.
     pub fn for_process(pid: u32) -> Result<Self, Errno> {
+        #[cfg(target_os = "freebsd")]
+        #[inline(always)]
+        fn extract_data(ki_proc: &libc::kinfo_proc) -> (libc::dev_t, u32, u32) {
+            (
+                ki_proc.ki_tdev as libc::dev_t,
+                ki_proc.ki_sid as u32,
+                ki_proc.ki_uid,
+            )
+        }
+
+        #[cfg(target_os = "dragonfly")]
+        #[inline(always)]
+        fn extract_data(ki_proc: &libc::kinfo_proc) -> (libc::dev_t, u32, u32) {
+            (
+                ki_proc.kp_tdev as libc::dev_t,
+                ki_proc.kp_sid as u32,
+                ki_proc.kp_uid,
+            )
+        }
+
         let ki_proc = bsd::proc_info::<libc::kinfo_proc>(
             [
                 libc::CTL_KERN,
@@ -61,13 +81,13 @@ impl RawProcessInfo {
         )?;
 
         const NOTTY: libc::dev_t = !0;
-        let tty = match ki_proc.ki_tdev as libc::dev_t {
+
+        let (tty, session, uid) = extract_data(&ki_proc);
+
+        let tty = match tty {
             NOTTY => None,
             other => Some(other as libc::dev_t),
         };
-
-        let session = ki_proc.ki_sid as u32;
-        let uid = ki_proc.ki_uid;
 
         Ok(Self {
             pid,
@@ -177,6 +197,6 @@ impl ProcessInfo {
 }
 
 #[test]
-fn name() {
-    _ = dbg!(ProcessInfo::current());
+fn current_process_info() {
+    assert!(ProcessInfo::current().is_ok())
 }

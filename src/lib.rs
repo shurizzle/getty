@@ -10,7 +10,10 @@
     ),
     path = "bsd/apple.rs"
 )]
-#[cfg_attr(any(target_os = "freebsd", target_os = "ios"), path = "bsd/freebsd.rs")]
+#[cfg_attr(
+    any(target_os = "freebsd", target_os = "dragonfly"),
+    path = "bsd/freebsd.rs"
+)]
 mod imp;
 
 pub use imp::*;
