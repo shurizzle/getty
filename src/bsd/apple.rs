@@ -16,7 +16,7 @@ mod sysctl {
 pub use core::ffi::CStr;
 use core::fmt;
 
-pub use apple_errnos::Errno;
+pub use bsd_errnos::Errno;
 /// Device id.
 pub type Dev = u32;
 
