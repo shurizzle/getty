@@ -5,11 +5,11 @@ edition = "2021"
 
 [features]
 default = ["std"]
-std = ["linux-syscalls/std", "linux-stat/std", "apple-errnos/std"]
+std = ["linux-syscalls/std", "linux-stat/std", "bsd-errnos/std"]
 c = ["libc"]
 
-[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
-apple-errnos = { version = "0.1.2", default-features = false }
+[target.'cfg(any(target_os = "macos", target_os = "ios", target_os = "watchos", target_os = "tvos", target_os = "freebsd", target_os = "dragonfly", target_os = "openbsd", target_os = "netbsd"))'.dependencies]
+bsd-errnos = { git = "https://github.com/shurizzle/bsd-errnos.git", default-features = false }
 libc = "0.2.147"
 
 [build-dependencies]
