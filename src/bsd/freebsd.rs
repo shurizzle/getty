@@ -13,8 +13,6 @@ pub type Dev = u32;
 pub struct RawProcessInfo {
     /// The process id.
     pub pid: u32,
-    /// The user id owning the process.
-    pub uid: u32,
     /// The session id.
     pub session: u32,
     /// The tty device id if process has one.
@@ -33,8 +31,6 @@ pub struct TtyInfo {
 pub struct ProcessInfo {
     /// The process id.
     pub pid: u32,
-    /// The user id owning the process.
-    pub uid: u32,
     /// The session id.
     pub session: u32,
     /// The tty device informations if process has one.
@@ -52,22 +48,14 @@ impl RawProcessInfo {
     pub fn for_process(pid: u32) -> Result<Self, Errno> {
         #[cfg(target_os = "freebsd")]
         #[inline(always)]
-        fn extract_data(ki_proc: &libc::kinfo_proc) -> (libc::dev_t, u32, u32) {
-            (
-                ki_proc.ki_tdev as libc::dev_t,
-                ki_proc.ki_sid as u32,
-                ki_proc.ki_uid,
-            )
+        fn extract_data(ki_proc: &libc::kinfo_proc) -> (Dev, u32) {
+            (ki_proc.ki_tdev as _, ki_proc.ki_sid as u32)
         }
 
         #[cfg(target_os = "dragonfly")]
         #[inline(always)]
-        fn extract_data(ki_proc: &libc::kinfo_proc) -> (libc::dev_t, u32, u32) {
-            (
-                ki_proc.kp_tdev as libc::dev_t,
-                ki_proc.kp_sid as u32,
-                ki_proc.kp_uid,
-            )
+        fn extract_data(ki_proc: &libc::kinfo_proc) -> (Dev, u32) {
+            (ki_proc.kp_tdev as _, ki_proc.kp_sid as u32)
         }
 
         let ki_proc = bsd::proc_info::<libc::kinfo_proc>(
@@ -80,21 +68,16 @@ impl RawProcessInfo {
             .as_mut_slice(),
         )?;
 
-        const NOTTY: libc::dev_t = !0;
+        const NOTTY: Dev = !0;
 
-        let (tty, session, uid) = extract_data(&ki_proc);
+        let (tty, session) = extract_data(&ki_proc);
 
         let tty = match tty {
             NOTTY => None,
             other => Some(other as libc::dev_t),
         };
 
-        Ok(Self {
-            pid,
-            uid,
-            session,
-            tty,
-        })
+        Ok(Self { pid, session, tty })
     }
 }
 
@@ -189,7 +172,6 @@ impl ProcessInfo {
 
         Ok(Self {
             pid: info.pid,
-            uid: info.uid,
             session: info.session,
             tty: info.tty.map(TtyInfo::by_device).transpose()?,
         })
