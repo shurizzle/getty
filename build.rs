@@ -1,6 +1,10 @@
 use std::path::PathBuf;
 
 fn main() {
+    println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-env-changed=TARGET");
+    println!("cargo:rerun-if-env-changed=CARGO_CFG_TARGET_OS");
+
     let out_path = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("bindings");
 
     if !out_path.exists() {
