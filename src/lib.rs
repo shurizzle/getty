@@ -14,7 +14,10 @@
     any(target_os = "freebsd", target_os = "dragonfly"),
     path = "bsd/freebsd.rs"
 )]
-#[cfg_attr(target_os = "netbsd", path = "bsd/netbsd.rs")]
+#[cfg_attr(
+    any(target_os = "netbsd", target_os = "openbsd"),
+    path = "bsd/netbsd.rs"
+)]
 mod imp;
 
 pub use imp::*;

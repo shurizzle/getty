@@ -37,6 +37,16 @@ pub struct ProcessInfo {
     pub tty: Option<TtyInfo>,
 }
 
+#[cfg(target_os = "netbsd")]
+type KinfoProc = libc::kinfo_proc2;
+#[cfg(target_os = "openbsd")]
+type KinfoProc = libc::kinfo_proc;
+
+#[cfg(target_os = "netbsd")]
+const KERN_PROC: libc::c_int = libc::KERN_PROC2;
+#[cfg(target_os = "openbsd")]
+const KERN_PROC: libc::c_int = libc::KERN_PROC;
+
 impl RawProcessInfo {
     /// Returns the informations for the current process.
     #[inline]
@@ -48,17 +58,23 @@ impl RawProcessInfo {
     pub fn for_process(pid: u32) -> Result<Self, Errno> {
         #[cfg(target_os = "netbsd")]
         #[inline(always)]
-        fn extract_data(ki_proc: &libc::kinfo_proc2) -> (Dev, u32) {
+        fn extract_data(ki_proc: &KinfoProc) -> (Dev, u32) {
             (ki_proc.p_tdev as _, ki_proc.p_sid as _)
         }
 
-        let ki_proc = bsd::proc_info::<libc::kinfo_proc2>(
+        #[cfg(target_os = "openbsd")]
+        #[inline(always)]
+        fn extract_data(ki_proc: &KinfoProc) -> (Dev, u32) {
+            (ki_proc.p_tdev as _, ki_proc.p_sid as _)
+        }
+
+        let ki_proc = bsd::proc_info::<KinfoProc>(
             [
                 libc::CTL_KERN,
-                libc::KERN_PROC2,
+                KERN_PROC,
                 libc::KERN_PROC_PID,
                 pid as _,
-                core::mem::size_of::<libc::kinfo_proc2>() as _,
+                core::mem::size_of::<KinfoProc>() as _,
                 1,
             ]
             .as_mut_slice(),
