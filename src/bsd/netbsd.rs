@@ -13,10 +13,6 @@ pub type Dev = libc::dev_t;
 pub struct RawProcessInfo {
     /// The process id.
     pub pid: u32,
-    /// The user id owning the process.
-    pub uid: u32,
-    /// The group id owning the process.
-    pub gid: u32,
     /// The session id.
     pub session: u32,
     /// The tty device id if process has one.
@@ -35,10 +31,6 @@ pub struct TtyInfo {
 pub struct ProcessInfo {
     /// The process id.
     pub pid: u32,
-    /// The user id owning the process.
-    pub uid: u32,
-    /// The group id owning the process.
-    pub gid: u32,
     /// The session id.
     pub session: u32,
     /// The tty device informations if process has one.
@@ -56,13 +48,8 @@ impl RawProcessInfo {
     pub fn for_process(pid: u32) -> Result<Self, Errno> {
         #[cfg(target_os = "netbsd")]
         #[inline(always)]
-        fn extract_data(ki_proc: &libc::kinfo_proc2) -> (Dev, u32, u32, u32) {
-            (
-                ki_proc.p_tdev as _,
-                ki_proc.p_sid as _,
-                ki_proc.p_uid,
-                ki_proc.p_gid,
-            )
+        fn extract_data(ki_proc: &libc::kinfo_proc2) -> (Dev, u32) {
+            (ki_proc.p_tdev as _, ki_proc.p_sid as _)
         }
 
         let ki_proc = bsd::proc_info::<libc::kinfo_proc2>(
@@ -79,20 +66,14 @@ impl RawProcessInfo {
 
         const NOTTY: libc::dev_t = !0;
 
-        let (tty, session, uid, gid) = extract_data(&ki_proc);
+        let (tty, session) = extract_data(&ki_proc);
 
         let tty = match tty {
             NOTTY => None,
             other => Some(other as libc::dev_t),
         };
 
-        Ok(Self {
-            pid,
-            uid,
-            gid,
-            session,
-            tty,
-        })
+        Ok(Self { pid, session, tty })
     }
 }
 
@@ -187,8 +168,6 @@ impl ProcessInfo {
 
         Ok(Self {
             pid: info.pid,
-            uid: info.uid,
-            gid: info.gid,
             session: info.session,
             tty: info.tty.map(TtyInfo::by_device).transpose()?,
         })
