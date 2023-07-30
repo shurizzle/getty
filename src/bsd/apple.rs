@@ -50,7 +50,7 @@ impl RawProcessInfo {
     /// Returns the informations for the current process.
     #[inline]
     pub fn current() -> Result<Self, Errno> {
-        Self::for_process(std::process::id())
+        Self::for_process(unsafe { libc::getpid() as u32 })
     }
 
     /// Returns the informations for the `pid` process.
@@ -74,12 +74,7 @@ impl RawProcessInfo {
             Some(ki_proc.kp_eproc.e_tdev as Dev)
         };
 
-        Ok(Self {
-            pid,
-            uid,
-            gid,
-            tty,
-        })
+        Ok(Self { pid, uid, gid, tty })
     }
 }
 
@@ -87,7 +82,7 @@ impl ProcessInfo {
     /// Calls [RawProcessInfo::current] and maps `tty` with [TtyInfo::by_device].
     #[inline]
     pub fn current() -> Result<Self, Errno> {
-        ProcessInfo::for_process(std::process::id())
+        ProcessInfo::for_process(unsafe { libc::getpid() as u32 })
     }
 
     /// Calls [RawProcessInfo::for_process] and maps `tty` with [TtyInfo::by_device].

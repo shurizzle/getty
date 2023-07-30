@@ -18,6 +18,7 @@ fn main() {
             .header_contents("wrapper.h", "#include <sys/sysctl.h>")
             .parse_callbacks(Box::new(bindgen::CargoCallbacks))
             .ctypes_prefix("::libc")
+            .use_core()
             .generate()
             .expect("Unable to generate bindings");
 

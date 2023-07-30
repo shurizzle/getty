@@ -5,7 +5,8 @@ edition = "2021"
 
 [features]
 default = ["std"]
-std = ["linux-syscalls/std", "linux-stat/std", "bsd-errnos/std"]
+std = ["linux-syscalls/std", "linux-stat/std", "bsd-errnos/std", "alloc"]
+alloc = []
 c = ["libc"]
 
 [target.'cfg(any(target_os = "macos", target_os = "ios", target_os = "watchos", target_os = "tvos", target_os = "freebsd", target_os = "dragonfly", target_os = "openbsd", target_os = "netbsd"))'.dependencies]
