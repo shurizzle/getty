@@ -181,18 +181,18 @@ fn scandir<B1: DirentBuf, B2: DirentBuf>(
     Ok(None)
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 type DirBuf = VecBuffer;
-#[cfg(all(feature = "c", not(feature = "std")))]
+#[cfg(all(feature = "c", not(feature = "alloc")))]
 type DirBuf = CBuffer;
-#[cfg(all(not(feature = "c"), not(feature = "std")))]
+#[cfg(all(not(feature = "c"), not(feature = "alloc")))]
 type DirBuf = ArrayBuffer<2048>;
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 type PathBuf = VecBuffer;
-#[cfg(all(feature = "c", not(feature = "std")))]
+#[cfg(all(feature = "c", not(feature = "alloc")))]
 type PathBuf = CBuffer;
-#[cfg(all(not(feature = "c"), not(feature = "std")))]
+#[cfg(all(not(feature = "c"), not(feature = "alloc")))]
 type PathBuf = ArrayBuffer<4096>;
 
 #[inline(always)]

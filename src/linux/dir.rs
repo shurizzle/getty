@@ -334,9 +334,9 @@ pub struct ArrayBuffer<const N: usize> {
 }
 
 /// A [DirentBuf] backed by a [`Vec<u8>`].
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 pub struct VecBuffer {
-    mem: Vec<u8>,
+    mem: alloc_crate::vec::Vec<u8>,
 }
 
 /// A [DirentBuf] backed by a `malloc`ated [u8] array.
@@ -446,16 +446,18 @@ impl<const N: usize> BorrowMut<[u8]> for ArrayBuffer<N> {
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 impl VecBuffer {
     /// Creates a new instance of [Self].
     #[inline]
     pub const fn new() -> Self {
-        Self { mem: Vec::new() }
+        Self {
+            mem: alloc_crate::vec::Vec::new(),
+        }
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 impl DirentBuf for VecBuffer {
     #[inline]
     fn reset(&mut self) {
@@ -501,7 +503,7 @@ impl DirentBuf for VecBuffer {
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 impl Deref for VecBuffer {
     type Target = [u8];
 
@@ -511,7 +513,7 @@ impl Deref for VecBuffer {
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 impl DerefMut for VecBuffer {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
@@ -519,7 +521,7 @@ impl DerefMut for VecBuffer {
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 impl AsRef<[u8]> for VecBuffer {
     #[inline]
     fn as_ref(&self) -> &[u8] {
@@ -527,7 +529,7 @@ impl AsRef<[u8]> for VecBuffer {
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 impl AsMut<[u8]> for VecBuffer {
     #[inline]
     fn as_mut(&mut self) -> &mut [u8] {
@@ -535,7 +537,7 @@ impl AsMut<[u8]> for VecBuffer {
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 impl Borrow<[u8]> for VecBuffer {
     #[inline]
     fn borrow(&self) -> &[u8] {
@@ -543,7 +545,7 @@ impl Borrow<[u8]> for VecBuffer {
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 impl BorrowMut<[u8]> for VecBuffer {
     #[inline]
     fn borrow_mut(&mut self) -> &mut [u8] {
